@@ -1,4 +1,5 @@
 [toc]
+
 # 1、用户输入模块
 
 ## 1、输入信号
@@ -98,16 +99,20 @@ public class actorController : MonoBehaviour
 }
 ```
 
-### 4.角色行走
+## 3.角色行走
 
 
 **再利用transform.forward 和 trasnform.right 来旋转角色。通过变换角色本地坐标系中的z，来让角色旋转**。
+
+Dmag 是 Dup 和 Dright 各自的平方相加，再开方,用来控制角色的移动动画与行走速度。
+
 forwardDirection = Dup * transform.forward + Dright * transform.right;
+
 
 ```
 public class PlayerInput : MonoBehaviour
 {
-    //Dup和Dright各自的平方相加，再开方,用来控制角色的移动动画
+    //Dup和Dright各自的平方相加，再开方,用来控制角色的移动动画与行走速度。
     private float Dmag;
     //改变角色的朝向，用来旋转juese
     private Vector3 forwardDirection;
@@ -141,9 +146,9 @@ public class actorController : MonoBehaviour
 }
 ```
 
-### 让角色真正移动
+#### 让角色真正移动
 
-**方案1： 利用Rigidbody组件**。rigidbody不太好控制。rigidbody想爬楼梯会很累，需要自己写代码，要判断这个楼梯是多高，先试踩一脚，如果发现可以踩，那就把坐标往上，推诸如此类逻辑。
+**方案1： 利用Rigidbody组件**。rigidbody不太好控制。rigidbody想爬楼梯会很累，需要自己写代码，要判断这个楼梯是多高，先试踩一脚，如果发现可以踩，那就把坐标往上，推诸如此类逻辑。但rigidbody爬坡会比较好做。
 
 
 **方案2： 利用CharacterController组件**。这是unity自己制作的，它的运算比较快。如果需要有重力的效果，需要明白move函数和simpleMove函数的区别。
@@ -152,7 +157,141 @@ public class actorController : MonoBehaviour
 
 **这里采用rigidbody**
 
-给角色添加rigidbody组件，再Freeze Rotation x轴和y轴。
+
+
+给角色添加rigidbody组件，再Freeze Rotation x、y、z轴。
+
+**第一种方法：在fixedUpdate中更改rigidBody的position。**
+```
+public class actorController : MonoBehaviour
+{
+    public float walkSpeed = 2.0f;
+    //角色位移量
+    private Vector3 movingVec;
+
+    void Update()
+    {
+        movingVec = pi.Dmag * model.transform.forward * walkSpeed;
+    }
+    private void FixedUpdate()
+    {
+        //位移 = 速度 * 时间
+        rigid.position += movingVec * Time.fixedDeltaTime;
+    }
+}
+```
+**第二种方法：更改rigidbody的velocity**
+
+需要注意的是：
+```
+        //直接指派速度，不需要乘时间
+        rigid.velocity = movingVec;
+```
+与
+```
+        //位移 = 速度 * 时间
+        rigid.position += movingVec * Time.fixedDeltaTime;
+```
+是等价的。但velocity不需要乘时间。
+
+**但此时velocity是有问题的，** 因为movingVec是由forward值乘出来的，所以y分量为0。如果直接将movingVec赋给velocity，就会把原来rigidbody的y分量的值给覆写了。这样就不会有地心引力，而且也跳不起来。
+
+**所以正确的写法是：**
+```
+rigid.velocity = new Vector3(movingVec.x, rigid.velocity.y, movingVec.z);
+```
+
+**做完这些后都要做爬楼梯或爬坡的测试。**
+
+#### 还存在的问题： 
+
+1.当角色斜45度角走时，速度会变快，这是因为Dmag的值此时变成了根号2，而不是1。
+
+2.在斜坡上时，角色的脚掌还不能很好地踩地。这地方要通过逐步IK的设置。
+
+## 4.跑步功能
+
+将跑步动画添加进混合树中，设置Threshold为2.
+
+![](2021-04-03-15-35-11.png)
+
+playerInput代码中新加一个string变量KeyRun用来存储奔跑键，bool变量run标识奔跑键是否被按下。
+run = Input.GetKey(keyRun);
+
+然后在actorController中控制角色奔跑动画与速度。
+```
+public class actorController : MonoBehaviour
+{
+    //控制奔跑速度
+    public float runMultiplier = 2.0f;
+
+    void Update()
+    {
+        //在后面乘上
+        anim.SetFloat("forward", pi.Dmag * (pi.run? 2.0f : 1.0f));
+        
+        //角色移动速度
+        movingVec = pi.Dmag * model.transform.forward * walkSpeed * (pi.run ? runMultiplier : 1.0f);
+    }
+```
+
+## 5.线性插值和球形线性插值（lerp和slerp）
+
+Vector3.Lerp是在两个点之间进行线性插值。
+
+Vector.slerp是在两个向量之间进行线性插值，返回的向量的方向通过角度进行插值
+
+**通过使用Slerp让角色的转身不会转得过快。**
+
+下面修改角色转身代码：
+```
+model.transform.forward = Vector3.Slerp(model.transform.forward, pi.forwardDirection, 0.3f);
+```
+
+**通过使用Mathf.lerp让角色从行走切换到跑步的动画不要太突兀。**
+```
+    float targetRunMulti = pi.run ? 2.0f : 1.0f;
+    anim.SetFloat("forward", pi.Dmag * Mathf.Lerp(anim.GetFloat("forward"),targetRunMulti,0.5f));
+```
+
+## 6.椭圆映射法
+
+[论文地址](https://arxiv.org/ftp/arxiv/papers/1509/1509.06344.pdf)
+
+ 前面遗留的问题，当让角色斜向运动时，运动速度会变快。这是因为以Dup和Dright为直角边的三角形的斜边为根号2，不是1。
+
+ 此时可以通过椭圆映射法将正方形的坐标映射到圆的坐标上，当Dup和Dright同时为1时，通过映射后，得到的斜边值为1。
+
+![](2021-04-03-19-16-40.png)
+
+修改代码
+
+```
+
+void Update()
+{
+    //将水平输入和垂直输入映射到圆上
+        Vector2 tempDAxis = sphereToCircle(new Vector2(Dright, Dup));
+        float newDup = tempDAxis.y;
+        float newDright = tempDAxis.x;
+
+        Dmag = Mathf.Sqrt(newDup * newDup + newDright * newDright);
+        forwardDirection = newDup * transform.forward + newDright * transform.right;
+}
+private Vector2 sphereToCircle(Vector2 input)
+    {
+        Vector2 output = Vector2.zero;
+
+        output.x = input.x * Mathf.Sqrt(1 - (input.y * input.y) / 2);
+        output.y = input.y * Mathf.Sqrt(1 - (input.x * input.x) / 2);
+
+        return output;
+    }
+```
+
+
+
+
 
 
 
