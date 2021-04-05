@@ -289,6 +289,80 @@ private Vector2 sphereToCircle(Vector2 input)
     }
 ```
 
+## 7.跳跃
+
+### 1.信号输入
+
+```
+//trigger once signal
+    public bool jump;
+    private bool lastJump;
+void jumpEvent()
+    {
+        bool newJump = Input.GetKeyDown(keyJump);
+        //后面还要判断newJump为true，是防止newJump为false，但lastJump为true时，也触发jump。
+        if (newJump != lastJump && newJump == true)
+        {
+            jump = true;
+            print("jump trigger");
+        }
+        else
+        {
+            jump = false;
+        }
+        lastJump = newJump;
+    }
+```
+添加动画，一个trigger类型变量jump
+
+切换动画
+在actorController的update中
+```
+ if(pi.jump)
+        {
+            anim.SetTrigger("jump");
+        }
+```
+### 2.重置triiger
+
+但连续点击跳跃时，会导致unity累计两次Trigger，导致多一次跳跃。
+
+**解决 1：**
+在动画状态机ground中，添加一个脚本，该脚本会自动继承自StateMachineBehaviour。
+在OnStateEnter函数中，遍历要清空的signal，调用animator的resetTrigger函数来进行清空。
+![](2021-04-05-08-40-03.png)
+```
+public class FSMClearSignals : StateMachineBehaviour
+{
+    public string[] clearAtEnter;
+    public string[] clearAtExit;
+
+    // OnStateEnter is called when a transition starts and the state machine starts to evaluate this state
+    override public void OnStateEnter(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
+    {
+        foreach (var signal in clearAtEnter)
+        {
+            animator.ResetTrigger(signal);
+        }
+    }
+
+    // OnStateExit is called when a transition ends and the state machine finishes evaluating this state
+    override public void OnStateExit(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
+    {
+        foreach (var signal in clearAtExit)
+        {
+            animator.ResetTrigger(signal);
+        }
+    }
+
+```
+
+**解决2：**
+在actorController中添加一个参数，热键输入就++，大于2时就不setTrigger，动画播放完毕后再把该参数置为0.
+
+
+
+
 
 
 
