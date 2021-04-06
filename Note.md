@@ -26,16 +26,15 @@ public string keyUp = "w";
 
     void Update()
     {
-        //将wasd输入转化微signal。
-        targetDup = (Input.GetKey(keyUp) ? 1.0f : 0) - (Input.GetKey(keyDown) ? 1.0f : 0);
-        targetDright = (Input.GetKey(keyRight) ? 1.0f : 0) - (Input.GetKey(keyLeft) ? 1.0f : 0);
 
         //关闭输入
-        if(!inputEnable)
+        if(inputEnable)
         {
-            targetDup = 0;
-            targetDright = 0;
+            //将wasd输入转化微signal。
+            targetDup = (Input.GetKey(keyUp) ? 1.0f : 0) - (Input.GetKey(keyDown) ? 1.0f : 0);
+            targetDright = (Input.GetKey(keyRight) ? 1.0f : 0) - (Input.GetKey(keyLeft) ? 1.0f : 0);
         }
+
         //通过smoothDamp让singal平滑过渡
         Dup = Mathf.SmoothDamp(Dup, targetDup, ref velocityDup, 0.1f);
         Dright = Mathf.SmoothDamp(Dright, targetDright, ref velocityDright, 0.1f);
@@ -328,7 +327,9 @@ void jumpEvent()
 但连续点击跳跃时，会导致unity累计两次Trigger，导致多一次跳跃。
 
 **解决 1：**
-在动画状态机ground中，添加一个脚本，该脚本会自动继承自StateMachineBehaviour。
+
+**在动画状态机ground中，添加一个脚本，该脚本会自动继承自StateMachineBehaviour。**
+
 在OnStateEnter函数中，遍历要清空的signal，调用animator的resetTrigger函数来进行清空。
 ![](2021-04-05-08-40-03.png)
 ```
@@ -360,7 +361,155 @@ public class FSMClearSignals : StateMachineBehaviour
 **解决2：**
 在actorController中添加一个参数，热键输入就++，大于2时就不setTrigger，动画播放完毕后再把该参数置为0.
 
+### 3.跳跃时禁止输入
 
+但角色跳跃时，禁止输入移动信号。
+
+在状态机中jump状态下，添加两个脚本onJumpEnter，onJumpExit。通过在这两个脚本中往外发送消息的方式，来控制输入信号的开关。
+
+**不要在动画状态中塞入太多逻辑，否则以后dubug时很难找到这段逻辑到底在哪。所以这些脚本都应该是很简单的代码，不应该有太多逻辑在里面**
+
+![](2021-04-06-15-05-59.png)
+
+**优化点：sendMessageUpwards可以优化，它的效率并没有那么好**
+
+```
+public class onJumpEnter : StateMachineBehaviour
+{
+    public string[] onEnterMessages; 
+    // OnStateEnter is called when a transition starts and the state machine starts to evaluate this state
+    override public void OnStateEnter(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
+    {
+        foreach(var msg in onEnterMessages)
+        {
+            animator.gameObject.SendMessageUpwards(msg);
+        }
+    }
+}
+
+public class OnJumpExit : StateMachineBehaviour
+{
+    public string[] onExitMessages;
+
+    // OnStateExit is called when a transition ends and the state machine finishes evaluating this state
+    override public void OnStateExit(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
+    {
+        foreach(var msg in onExitMessages)
+        {
+            animator.gameObject.SendMessageUpwards(msg);
+        }
+    }
+}
+
+```
+
+
+在actorController中接收消息。
+**尽量不要把代码放到第二层，很容易忘记在哪**
+
+```
+     public void onJumpEnter()
+    {
+        pi.inputEnable = false;
+    }
+    public void onJumpExit()
+    {
+        pi.inputEnable = true;
+    }
+```
+### 4.跳跃冲量
+
+在actorController中新增变量
+```
+    //跳跃垂直速度
+    public float jumpVelocity = 3.0f;
+    //跳跃冲量
+    private Vector3 thrustVec;
+```
+在角色的velocity中加上跳跃冲量，然后立刻将冲量置为0。在onJumpenter中给冲量赋值。
+```
+    private void FixedUpdate()
+    {
+        //rigid.position += planarVec * Time.fixedDeltaTime;
+        //直接指派速度，不需要乘时间,后面加上个跳跃的冲量，加完后冲量立刻置为0
+        rigid.velocity = new Vector3(planarVec.x, rigid.velocity.y, planarVec.z) + thrustVec;
+        thrustVec = Vector3.zero;
+    }
+
+    public void onJumpEnter()
+    {
+        pi.inputEnable = false;
+        thrustVec = new Vector3(0, jumpVelocity, 0);
+    }
+```
+
+## 7.降落动画
+
+### 添加降落动画
+
+### 新增地面侦测器
+
+新增一个空物体命名为sensor，用来存放各种传感器。
+
+新增一个OnGroundSensor，通过Physics.OverlapCapsule函数来检测角色是否碰撞到地面。
+![](2021-04-06-19-40-46.png)
+
+一个Capsule是由两个圆组成的，所以函数参数分别需要两个圆的圆心、半径
+![](2021-04-06-19-42-28.png)
+
+```
+public class OnGroundSensor : MonoBehaviour
+{
+    public CapsuleCollider capCol;
+    private Vector3 point0;
+    private Vector3 point1;
+    private float radius;
+    // Start is called before the first frame update
+    void Awake()
+    {
+        
+    }
+
+    // Update is called once per frame
+    void FixedUpdate()
+    {
+        radius = capCol.radius;
+        point0 = transform.position + transform.up * radius;
+        point1 = transform.position + transform.up * (capCol.height - radius);
+
+
+        Collider[] outputCol = Physics.OverlapCapsule(point0, point1, radius, LayerMask.GetMask("Ground"));
+        if (outputCol.Length != 0)
+        {
+            print("isGround");
+            SendMessageUpwards("IsGround");
+        }
+        else
+        {
+            print("isNotGround");
+            SendMessageUpwards("IsNotGround");
+        }
+    }
+}
+```
+优化点：sendMessageUpwards
+
+切换动画：animatorController新增一个bool变量，isGround，jump到ground和fall到ground的过渡条件都是isGround为true
+
+```
+public class actorController : MonoBehaviour
+{
+    public void IsGround()
+    {
+        anim.SetBool("isGround", true);
+    }
+
+    public void IsNotGround()
+    {
+        anim.SetBool("isGround", false);
+    }
+```
+![](2021-04-06-21-17-22.png)
 
 
 
