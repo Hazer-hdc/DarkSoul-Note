@@ -454,7 +454,7 @@ public class OnJumpExit : StateMachineBehaviour
 新增一个OnGroundSensor，通过Physics.OverlapCapsule函数来检测角色是否碰撞到地面。
 ![](2021-04-06-19-40-46.png)
 
-一个Capsule是由两个圆组成的，所以函数参数分别需要两个圆的圆心、半径
+一个Capsule是由两个圆组成的，所以函数参数分别需要两个圆的圆心、半径。**同时给两个圆添加一些偏移量，使得他们组成的capsule整体往下沉，且不与角色的capsuleColiider大小完全，否则会出现结果与预期不符的现象。**
 ![](2021-04-06-19-42-28.png)
 
 ```
@@ -464,19 +464,18 @@ public class OnGroundSensor : MonoBehaviour
     private Vector3 point0;
     private Vector3 point1;
     private float radius;
+    public float offset = 0.1f;
     // Start is called before the first frame update
     void Awake()
     {
-        
+        radius = capCol.radius - 0.05f ;
     }
 
     // Update is called once per frame
     void FixedUpdate()
     {
-        radius = capCol.radius;
-        point0 = transform.position + transform.up * radius;
-        point1 = transform.position + transform.up * (capCol.height - radius);
-
+        point0 = transform.position + transform.up * (radius - offset) ;
+        point1 = transform.position + transform.up * (capCol.height - radius - offset);
 
         Collider[] outputCol = Physics.OverlapCapsule(point0, point1, radius, LayerMask.GetMask("Ground"));
         if (outputCol.Length != 0)
@@ -492,7 +491,7 @@ public class OnGroundSensor : MonoBehaviour
     }
 }
 ```
-优化点：sendMessageUpwards
+**化点：sendMessageUpwards**
 
 切换动画：animatorController新增一个bool变量，isGround，jump到ground和fall到ground的过渡条件都是isGround为true
 
@@ -511,6 +510,33 @@ public class actorController : MonoBehaviour
 ```
 ![](2021-04-06-21-17-22.png)
 
+### 修改Bug
+
+1、角色直挺挺地下落，添加一个bool变量，当角色下落时，锁死角色水平速度。给fall状态添加一个FSMOnEnter脚本，发送消息。
+
+```
+public class actorController : MonoBehaviour
+{   
+     //锁定水平移动速度
+    private bool lockPlanar = false;
+
+    void Update()
+    {
+        //修改角色移动速度
+        if(!lockPlanar)
+        {
+            planarVec = pi.Dmag * model.transform.forward * walkSpeed * (pi.run ? runMultiplier : 1.0f);
+        }
+    }
+    public void OnFallEnter()
+    {
+        //当掉落时，锁定水平速度，以抛物线下落，以免直直地下落
+        lockPlanar = true;
+    }
+}
+```
+
+2、当角色
 
 
 
