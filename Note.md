@@ -443,7 +443,7 @@ public class OnJumpExit : StateMachineBehaviour
     }
 ```
 
-## 7.降落动画
+## 8.降落动画
 
 ### 添加降落动画
 
@@ -536,7 +536,35 @@ public class actorController : MonoBehaviour
 }
 ```
 
-2、当角色
+2、此时角色的跳跃动画到降落动画的过渡只有Exit time，这表示当跳跃动画播放到一定百分比时，就会满足过渡条件，自动过渡到降落动画。
+
+如果在过渡期间接触到地面，就会看到角色明明已经接触到地面了，却还要播一小段降落动画。
+
+解决方法：让jump->fall的过渡可以被打断，设置interruption source选择，选择current state，表示可以被jump状态的其它过渡打断，勾选了下面的Orderd Interrupt表示只能被比jump->fall的优先级高的过渡打断。
+
+![](image/2021-04-08-16-41-14.png)
+
+这样当角色接触地面时，下降动画就能被打断了。
+
+## 9.翻滚动画
+
+修改翻滚动画的animation中Root TransForm Position选项，勾选下面的Bake onto pose，让角色的根结点在垂直方向上跟随角色移动。
+
+黑魂中，人物行走时，按下跳跃键就会翻滚。当奔跑时，才是跳跃再接着翻滚。
+
+![](image/2021-04-08-20-06-44.png)
+
+对于ground->jump就不用去设置forward大于0了，可以通过各个过渡进行排序达到正确切换动画。
+
+![](image/2021-04-08-20-09-22.png)
+
+跳跃到翻滚也要连一条过渡。
+
+
+
+
+
+
 
 
 
