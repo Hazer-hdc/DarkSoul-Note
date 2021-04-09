@@ -560,6 +560,70 @@ public class actorController : MonoBehaviour
 
 跳跃到翻滚也要连一条过渡。
 
+### 增加向后的速度
+
+当向后跳跃时，给角色增加一个向后的速度。
+
+**利用动画曲线来控制向后速度的衰减。**
+
+![](image/2021-04-09-21-40-06.png)
+![](image/2021-04-09-21-40-18.png)
+
+在动画控制器新增一个jabVelocityRate变量来控制速度衰减。在后跳动画中添加曲线来控制该变量。
+
+![](image/2021-04-09-21-42-30.png)
+
+代码：在后跳动画的运行期间都调用OnJabUpdate
+```
+ private void FixedUpdate()
+    {
+
+        rigid.velocity = new Vector3(planarVec.x, rigid.velocity.y, planarVec.z) + thrustVec + jabThrust;
+        thrustVec = Vector3.zero;
+    }
+ public void OnJabUpdate()
+    {
+        //向后的冲量
+        jabThrust = model.transform.forward * jabVelocity * anim.GetFloat("jabVelocityRate");
+    }
+
+```
+
+# 2、摄像机
+
+## 输入信号
+
+键盘四个方向键
+```
+public class PlayerInput : MonoBehaviour
+{
+    public string keyJup;
+    public string keyJdown;
+    public string keyJright;
+    public string keyJleft;
+
+     //摄像头移动方向
+    public float Jup;
+    public float Jright;
+
+    void Update()
+    {
+        Jup = (Input.GetKey(keyJup) ? 1.0f : 0) - (Input.GetKey(keyJdown) ? 1.0f : 0);
+        Jright = (Input.GetKey(keyJright) ? 1.0f : 0) - (Input.GetKey(keyJleft) ? 1.0f : 0);
+```
+
+## 相机旋转
+
+**用playerHandler来控制摄像机的水平旋转，用playerHandler底下一个子物体cameraHandle来控制摄像机的垂直旋转。**
+
+在playerHandler下创建一个子物体CameraHandler，将CameraHandler放在角色的脖子位置，再将摄像机放在CameraHandler底下。
+
+![](image/2021-04-09-22-14-38.png)
+
+
+**给摄像机新增加一个脚本CameraController**
+
+
 
 
 
