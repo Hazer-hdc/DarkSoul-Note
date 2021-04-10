@@ -623,6 +623,93 @@ public class PlayerInput : MonoBehaviour
 
 **给摄像机新增加一个脚本CameraController**
 
+```
+public class CameraController : MonoBehaviour
+{
+    //信号输入
+    public PlayerInput pi;
+    //相机水平旋转速度
+    public float horizontalSpeed = 20.0f;
+    public float verticalSpeed = 80.0f;
+
+    //控制相机水平旋转
+    private GameObject playerHandler;
+    //控制相机垂直旋转
+    private GameObject cameraHandler;
+    public float currentVerticalAngle;
+
+    // Start is called before the first frame update
+    void Awake()
+    {
+        cameraHandler = transform.parent.gameObject;
+        playerHandler = cameraHandler.transform.parent.gameObject;
+        currentVerticalAngle = 0;
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        //相机水平旋转
+        playerHandler.transform.Rotate(Vector3.up, pi.Jright * horizontalSpeed * Time.deltaTime);
+
+        //相机垂直旋转
+        currentVerticalAngle += pi.Jup * -verticalSpeed * Time.deltaTime;
+        currentVerticalAngle = Mathf.Clamp(currentVerticalAngle, -40, 30);
+        cameraHandler.transform.localEulerAngles = new Vector3(currentVerticalAngle,0,0);
+
+    }
+}
+```
+
+注意：垂直旋转需要限定旋转角度在-40到30之间。如果使用rotate方法旋转，然后再读取eulerAngle的x值来限定范围。**这种做法是错误的**，因为从aulerAngle读出来的值可能与分配的值截然不同。
+
+![](image/2021-04-10-16-30-49.png)
+
+官方文档中写着：
+![](image/2021-04-10-16-39-42.png)
+
+所以不能通过rotate来实现。
+
+所以正确做法是：
+```
+public float currentVerticalAngle;
+        //相机垂直旋转
+        currentVerticalAngle += pi.Jup * -verticalSpeed * Time.deltaTime;
+        currentVerticalAngle = Mathf.Clamp(currentVerticalAngle, -40, 30);
+        cameraHandler.transform.localEulerAngles = new Vector3(currentVerticalAngle,0,0);
+
+```
+
+**通过设置localEulerAngles的值来改变角度，不依赖从eulerAngles当中读取角度。** 这里需要用localEulerAngles，不然用eulerAngle的话，y和z的值会覆盖相机的水平旋转。
+
+## 相机延迟移动
+
+为了让相机旋转时，角色模型保持不动，需要在相机旋转前保存模型当前的旋转，相机旋转后，再把模型的旋转设置为原来的角度。
+
+这时就体现出了用PlayerHandler来控制相机的水平旋转的好处了，**因为相机的forward方向永远与PlayerHandler一样，** 而角色模型的前方朝向是依据PlayerHandler的forward来旋转。这样就导致相机旋转后，角色一旦向前走，就会转向相机的forward方向。
+
+
+延迟移动：
+**用一个空物体代替mainCamera的位置，让camera追这个物体。** cameraController代码放在这个空物体中。
+
+![](image/2021-04-10-17-47-12.png)
+
+```
+public float cameraSmoothTime = 0.05f;
+private Vector3 cameraDampVelocity;
+private GameObject mainCamera;
+
+private void FixedUpdate()
+    {
+        // 让摄像机平滑地追上角色
+        mainCamera.transform.position = Vector3.SmoothDamp(mainCamera.transform.position, transform.position,
+            ref cameraDampVelocity, cameraSmoothTime);
+        mainCamera.transform.eulerAngles = transform.eulerAngles;
+    }
+```
+
+
+
 
 
 
