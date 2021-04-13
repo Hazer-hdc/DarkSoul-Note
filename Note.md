@@ -512,7 +512,8 @@ public class actorController : MonoBehaviour
 
 ### 修改Bug
 
-1、角色直挺挺地下落，添加一个bool变量，当角色下落时，锁死角色水平速度。给fall状态添加一个FSMOnEnter脚本，发送消息。
+#### 1、
+角色直挺挺地下落，添加一个bool变量，当角色下落时，锁死角色水平速度。给fall状态添加一个FSMOnEnter脚本，发送消息。
 
 ```
 public class actorController : MonoBehaviour
@@ -536,7 +537,8 @@ public class actorController : MonoBehaviour
 }
 ```
 
-2、此时角色的跳跃动画到降落动画的过渡只有Exit time，这表示当跳跃动画播放到一定百分比时，就会满足过渡条件，自动过渡到降落动画。
+#### 2、
+此时角色的跳跃动画到降落动画的过渡只有Exit time，这表示当跳跃动画播放到一定百分比时，就会满足过渡条件，自动过渡到降落动画。
 
 如果在过渡期间接触到地面，就会看到角色明明已经接触到地面了，却还要播一小段降落动画。
 
@@ -546,6 +548,13 @@ public class actorController : MonoBehaviour
 
 这样当角色接触地面时，下降动画就能被打断了。
 
+#### 3、
+当角色降落期间撞到墙壁，就会卡在空中，一直下不来。
+![](image/2021-04-13-22-55-12.png)
+
+这是因为角色的velocity和摩擦力，在降落时锁死了velocity，导致velocity一直有一个向前的力，让摩擦力非常大，掉不下来。
+
+解决思路：但角色在空中时，切换角色的物理材质为零摩擦力物理材质，回到地面时再切回来。
 ## 9.翻滚动画
 
 修改翻滚动画的animation中Root TransForm Position选项，勾选下面的Bake onto pose，让角色的根结点在垂直方向上跟随角色移动。
@@ -707,6 +716,65 @@ private void FixedUpdate()
         mainCamera.transform.eulerAngles = transform.eulerAngles;
     }
 ```
+
+
+
+# 战斗系统
+
+新建攻击[动画层](https://docs.unity3d.com/cn/2019.4/Manual/AnimationLayers.html)，添加攻击动画。
+
+![](image/2021-04-13-18-01-33.png)
+
+需要设置该[动画层](https://docs.unity3d.com/cn/2019.4/Manual/AnimationLayers.html)的权重，才会覆盖上一层。
+![](image/2021-04-13-18-16-50.png)
+
+## [Avatar Mask](https://docs.unity3d.com/cn/2019.4/Manual/class-AvatarMask.html)
+
+Mask用于指定此层上使用的遮罩，也就是要取出那几根骨头来影响上一层。
+例如只想播放模型上半身的投掷动画，同时让角色也能够行走或跑动，则可以在层上使用一个遮罩，从而在定义上半身部分的位置播放投掷动画。
+
+## 修改动画层的权重
+
+```
+
+    public void OnAttack1hEnter()
+    {
+        pi.inputEnable = false;
+        anim.SetLayerWeight(anim.GetLayerIndex("attack"), 1.0f);
+    }
+
+    public void OnIdleEnter()
+    {
+        pi.inputEnable = true;
+        anim.SetLayerWeight(anim.GetLayerIndex("attack"), 0);
+    }
+```
+
+## 限制攻击条件
+
+运用动画的api：anim.GetCurrentAnimatorStateInfo。
+
+当跳起来和降落到地面时就修改canAttack参数。
+
+```
+private bool canAttack;
+   void Update()
+    {
+//攻击，后面限制攻击条件
+        if (pi.attack && checkState("ground") && canAttack)
+        {
+            anim.SetTrigger("attack");
+        }
+    }
+//查看当前动画层所处的状态是否与stateName一致
+    public bool checkState(string stateName, string layerName = "Base Layer")
+    {
+        return anim.GetCurrentAnimatorStateInfo(anim.GetLayerIndex(layerName)).IsName(stateName);
+    }
+```
+
+
+
 
 
 
