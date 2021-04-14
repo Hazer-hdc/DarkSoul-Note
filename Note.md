@@ -864,8 +864,32 @@ public class RootMotionController : MonoBehaviour
 
 ![](image/2021-04-14-19-46-19.png)
 
+勾选mirror右边的parameter，使用状态机参数来控制mirror。
+![](image/2021-04-14-19-47-20.png)
 
 
+### 摄像头抖动修正
+
+1、摄像机的旋转用lookAt
+```
+mainCamera.transform.LookAt(cameraHandler.transform);
+```
+
+2、如果运用了根运动，就修改animator组件的Update Mode为Animate Physics。
+![](image/2021-04-14-22-46-07.png)
+
+3、此时第三段连击时还是会有轻微的晃动，这是因为在第三段连击时应用了根运动。
+```
+//更新动画的根运动
+    public void  OnUpdateRM(object _deltaPos)
+    {
+        if(checkState("attack1hC", "attack"))
+        {
+            //后面乘以权重的目的是修正摄像机抖动
+            deltaPos = deltaPos * 0.8f + 0.2f * (Vector3)_deltaPos;
+        }
+    }
+```
 
 
 
