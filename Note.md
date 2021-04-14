@@ -720,6 +720,7 @@ private void FixedUpdate()
 
 
 # 战斗系统
+## 动画
 
 新建攻击[动画层](https://docs.unity3d.com/cn/2019.4/Manual/AnimationLayers.html)，添加攻击动画。
 
@@ -728,12 +729,12 @@ private void FixedUpdate()
 需要设置该[动画层](https://docs.unity3d.com/cn/2019.4/Manual/AnimationLayers.html)的权重，才会覆盖上一层。
 ![](image/2021-04-13-18-16-50.png)
 
-## [Avatar Mask](https://docs.unity3d.com/cn/2019.4/Manual/class-AvatarMask.html)
+### [Avatar Mask](https://docs.unity3d.com/cn/2019.4/Manual/class-AvatarMask.html)
 
 Mask用于指定此层上使用的遮罩，也就是要取出那几根骨头来影响上一层。
 例如只想播放模型上半身的投掷动画，同时让角色也能够行走或跑动，则可以在层上使用一个遮罩，从而在定义上半身部分的位置播放投掷动画。
 
-## 修改动画层的权重
+### 修改动画层的权重
 
 ```
 
@@ -750,7 +751,7 @@ Mask用于指定此层上使用的遮罩，也就是要取出那几根骨头来�
     }
 ```
 
-## 限制攻击条件
+### 限制攻击条件
 
 运用动画的api：anim.GetCurrentAnimatorStateInfo。
 
@@ -772,6 +773,100 @@ private bool canAttack;
         return anim.GetCurrentAnimatorStateInfo(anim.GetLayerIndex(layerName)).IsName(stateName);
     }
 ```
+
+### 添加连击动画
+
+![](image/2021-04-14-15-03-05.png)
+
+修改新动画的Rig下面的animation type和avatar。
+
+![](image/2021-04-14-15-04-03.png)
+
+勾选animation下面的各种烘培。
+
+![](image/2021-04-14-15-05-07.png)
+
+### 设置连击timing
+
+利用动画事件，在一段攻击播放到特定时间时，清空attack Trigger，迫使玩家在后面按攻击键才会触发连击。
+
+给juese模型新添加一个脚本AnimTriggerController
+
+```
+public class AnimTriggerController : MonoBehaviour
+{
+    private Animator anim;
+
+    private void Awake()
+    {
+        anim = GetComponent<Animator>();
+    }
+
+    public void ResetTrigger(string triggerName)
+    {
+        anim.ResetTrigger(triggerName);
+   
+```
+
+给各段攻击动画添加事件
+![](image/2021-04-14-16-51-28.png)
+
+### 获取动画的Root Motion
+
+在一些动画中角色是会移动的，这时就需要在动画播放过程中控制角色也进行相应的移动。
+
+MonoBehaviour.OnAnimatorMove()可以解决这个问题，
+![](image/2021-04-14-17-46-36.png)
+
+```
+public class RootMotionController : MonoBehaviour
+{
+    private Animator anim;
+    private void Awake()
+    {
+        anim = GetComponent<Animator>();
+    }
+    private void OnAnimatorMove()
+    {
+        SendMessageUpwards("OnUpdateRM", (object)anim.deltaPosition);
+    }
+}
+```
+
+
+当OnAnimationMove函数被用了之后，animator中的Apply Root Motion就不能勾选了。
+![](image/2021-04-14-17-50-22.png)
+
+最后在actorController中修改rigid.position。
+```
+//动画每帧的根运动
+    private Vector3 deltaPos;
+
+    private void FixedUpdate()
+    {
+        //叠加动画的根运动。
+        rigid.position += deltaPos;
+        deltaPos = Vector3.zero;
+    }
+ //更新动画的根运动
+    public void  OnUpdateRM(object _deltaPos)
+    {
+        if(checkState("attack1hC", "attack"))
+        {
+            deltaPos = (Vector3)_deltaPos;
+        }
+    }
+```
+
+### 动画水平翻转
+
+通过勾选状态的mirror属性来翻转动画。勾选后，右手攻击就变成了左手攻击。
+
+![](image/2021-04-14-19-46-19.png)
+
+
+
+
 
 
 
