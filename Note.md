@@ -717,7 +717,18 @@ private void FixedUpdate()
     }
 ```
 
+## 隐藏鼠标icon
 
+利用[Cursor](https://docs.unity3d.com/cn/2019.4/ScriptReference/Cursor.html)类,设置光标（鼠标指针）的光标 API。
+
+在cameraController中
+```
+void Awake()
+    {
+        //开始运行游戏就隐藏鼠标光标
+        Cursor.lockState = CursorLockMode.Locked;
+    }
+```
 
 # 战斗系统
 ## 动画
@@ -878,7 +889,7 @@ mainCamera.transform.LookAt(cameraHandler.transform);
 2、如果运用了根运动，就修改animator组件的Update Mode为Animate Physics。
 ![](image/2021-04-14-22-46-07.png)
 
-3、此时第三段连击时还是会有轻微的晃动，这是因为在第三段连击时应用了根运动。
+3、此时第三段连击时还是会有轻微的晃动，这是因为在第三段连击时应用了根运动。但如果以权重的方式修正抖动的话，又会导致这个动作踏不出去。
 ```
 //更新动画的根运动
     public void  OnUpdateRM(object _deltaPos)
@@ -890,6 +901,195 @@ mainCamera.transform.LookAt(cameraHandler.transform);
         }
     }
 ```
+
+### 通过OnAnimatorIK修改动画
+
+目前当角色闲置时，角色还是举着盾牌，我们希望他把盾牌放下。因为没有美术人员，所以自己通过代码稍微修改一下动画。
+![](image/2021-04-15-16-51-44.png)
+
+**利用MonoBehaviour.OnAnimatorIK(int)实现。**
+
+**需要注意的是：一个动画层勾选了IK Pass，引擎才会去呼叫OnAnimatorIK，不然OnAnimatorIK函数不起作用。**
+
+![](image/2021-04-15-16-30-52.png)
+
+调用OnAnimatorIK的脚本需要放在animator组件的兄弟层。
+
+```
+public class leftArmAnimFix : MonoBehaviour
+{
+    private Animator anim;
+    public Vector3 leftLowerArmRotation;
+
+    private void Awake()
+    {
+        anim = GetComponent<Animator>();
+    }
+
+    private void OnAnimatorIK(int layerIndex)
+    {
+        Transform leftLowerArm = anim.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+        leftLowerArm.localEulerAngles += leftLowerArmRotation;
+        anim.SetBoneLocalRotation(HumanBodyBones.LeftLowerArm, Quaternion.Euler(leftLowerArm.localEulerAngles));
+    }
+}
+```
+修改后
+![](image/2021-04-15-16-59-50.png)
+
+### 盾牌动画
+
+新添加盾牌动画，因为有了新的盾牌放下的动画了，所以OnAnimatorIK用不上了。
+
+
+
+# 优化1
+
+## 封装信号
+
+将trigger once 类型信号封装成一个类，如jump、attack，减少重复代码。
+
+```
+public class ButtonInput 
+{
+    public bool isPressing = false;
+    //刚刚按下
+    public bool onPressed = false;
+    //刚刚释放
+    public bool onReleased = false;
+
+    private bool currenState = false;
+    private bool lastState = false;
+
+    public void Tick(bool input)
+    {
+        currenState = input;
+
+        isPressing = currenState;
+
+        onPressed = false;
+        onReleased = false;
+        if(currenState != lastState)
+        {
+            if(currenState == true)
+                onPressed = true;
+            else
+                onReleased = true;
+        }
+
+        lastState = currenState;
+    }
+}
+```
+
+# 计时器类
+
+## 实现
+
+```
+public class ButtonTimer 
+{
+    //计时器当前的状态
+    public enum STATE
+    {
+        FINISHED,
+        RUN
+    }
+    public STATE state;
+
+    //计时上限
+    public float duration = 1.0f;
+    //已持续的时间
+    private float elapsedTime = 0;
+
+    public void Tick(float deltaTime)
+    {
+        //开始计时
+        if(state == STATE.RUN)
+        {
+            elapsedTime += Time.deltaTime;
+            if (elapsedTime >= duration)
+                state = STATE.FINISHED;
+        }
+    }
+
+    //启动计时器
+    public void GO()
+    {
+        elapsedTime = 0;
+        state = STATE.RUN;
+    }
+}
+```
+
+## double trigger
+
+利用计数器实现double trigger
+```
+public class ButtonInput 
+{
+    //计时上限
+    public float extendingDuration = 0.3f;
+
+    //是否处于延长时间内,用来判断double trigger
+    public bool isExtending = false;
+
+    //延长时间的计时器，用来实现double trigger
+    private ButtonTimer extTimer = new ButtonTimer();
+
+    //累计的按下按键的次数，用来判断double trigger
+    public int accumulatedCount = 0;
+    //是否触发double trigger
+    public bool doublePressed = false;
+
+    public void Tick(bool input)
+    {
+        extTimer.Tick(Time.deltaTime);
+
+        currenState = input;
+
+        isPressing = currenState;
+
+        onPressed = false;
+        onReleased = false;
+
+        if (currenState != lastState)
+        {
+            if(currenState == true)
+            {
+                onPressed = true;
+                //增加累计数
+                accumulatedCount++;
+                //从按下按键那一刻开始计时，如果正在计时中，就不要重新开启计时器
+                if(!isExtending)
+                    StartTimer(extTimer, extendingDuration);
+            }
+            else
+            {
+                onReleased = true;
+            }
+        }
+        lastState = currenState;
+        
+        //判断是否处于延长时间
+        isExtending = (extTimer.state == ButtonTimer.STATE.RUN);
+        //判断是否在延长时间内连续按两次
+        doublePressed = false;
+        if (!isExtending)
+        {
+            doublePressed = false;
+            accumulatedCount = 0;
+        }
+        else if(accumulatedCount == 2)
+        {
+            doublePressed = true;
+            accumulatedCount = 0;
+        }
+    }
+```
+
+
+
 
 
 
