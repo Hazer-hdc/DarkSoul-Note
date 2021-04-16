@@ -730,8 +730,296 @@ void Awake()
     }
 ```
 
+# 优化1
+
+## 封装信号
+
+将trigger once 类型信号封装成一个类，如jump、attack，减少重复代码。
+
+```
+public class ButtonInput 
+{
+    public bool isPressing = false;
+    //刚刚按下
+    public bool onPressed = false;
+    //刚刚释放
+    public bool onReleased = false;
+
+    private bool currenState = false;
+    private bool lastState = false;
+
+    public void Tick(bool input)
+    {
+        currenState = input;
+
+        isPressing = currenState;
+
+        onPressed = false;
+        onReleased = false;
+        if(currenState != lastState)
+        {
+            if(currenState == true)
+                onPressed = true;
+            else
+                onReleased = true;
+        }
+
+        lastState = currenState;
+    }
+}
+```
+
+# 计时器类
+
+## 实现
+
+```
+public class ButtonTimer 
+{
+    //计时器当前的状态
+    public enum STATE
+    {
+        FINISHED,
+        RUN
+    }
+    public STATE state;
+
+    //计时上限
+    public float duration = 1.0f;
+    //已持续的时间
+    private float elapsedTime = 0;
+
+    public void Tick(float deltaTime)
+    {
+        //开始计时
+        if(state == STATE.RUN)
+        {
+            elapsedTime += Time.deltaTime;
+            if (elapsedTime >= duration)
+                state = STATE.FINISHED;
+        }
+    }
+
+    //启动计时器
+    public void GO()
+    {
+        elapsedTime = 0;
+        state = STATE.RUN;
+    }
+}
+```
+
+## 双击功能
+
+黑魂中的双击功能，延长的时间是**从上一次按键被释放开始计时**，这样就造成长按某个键，再释放并快速地按第二次，也能形成双击效果。
+
+正常游戏中的双击是**从上一次按键被按下开始计时**，这样就避免了上面的问题。
+
+下面给出的是正常版本，在下一节中的长按功能中一起给出黑魂版本。
+
+利用计数器实现double trigger
+```
+public class ButtonInput 
+{
+    //计时上限
+    public float extendingDuration = 0.3f;
+
+    //是否处于延长时间内,用来判断double trigger
+    public bool isExtending = false;
+
+    //延长时间的计时器，用来实现double trigger
+    private ButtonTimer extTimer = new ButtonTimer();
+
+    //累计的按下按键的次数，用来判断double trigger
+    public int accumulatedCount = 0;
+    //是否触发double trigger
+    public bool doublePressed = false;
+
+    public void Tick(bool input)
+    {
+        extTimer.Tick(Time.deltaTime);
+
+        currenState = input;
+
+        isPressing = currenState;
+
+        onPressed = false;
+        onReleased = false;
+
+        if (currenState != lastState)
+        {
+            if(currenState == true)
+            {
+                onPressed = true;
+                //增加累计数
+                accumulatedCount++;
+                //从按下按键那一刻开始计时，如果正在计时中，就不要重新开启计时器
+                if(!isExtending)
+                    StartTimer(extTimer, extendingDuration);
+            }
+            else
+            {
+                onReleased = true;
+            }
+        }
+        lastState = currenState;
+        
+        //判断是否处于延长时间
+        isExtending = (extTimer.state == ButtonTimer.STATE.RUN);
+        //判断是否在延长时间内连续按两次
+        doublePressed = false;
+        if (!isExtending)
+        {
+            doublePressed = false;
+            accumulatedCount = 0;
+        }
+        else if(accumulatedCount == 2)
+        {
+            doublePressed = true;
+            accumulatedCount = 0;
+        }
+    }
+```
+
+## 长按功能
+
+由于黑魂的游戏机制比较特殊，所以顺带修改一下ButtonInput类，双击功能分为黑魂版和正常版。
+
+```
+public class ButtonInput 
+{
+    public bool isPressing = false;
+    //刚刚按下
+    public bool onPressed = false;
+    //刚刚释放
+    public bool onReleased = false;
+   
+    private bool currenState = false;
+    private bool lastState = false;
+
+    //======================== 双击功能 ================================
+    //     ============== 黑魂版 ======================
+    //是否处于连按延长时间内,用来判断double trigger
+    public bool isExtending = false;
+    //计时上限
+    public float extendingDuration = 0.15f;
+    //连按延长时间的计时器，用来实现double trigger
+    private ButtonTimer extTimer = new ButtonTimer();
+
+
+    //     ============== 正常版（额外加上以下变量） ======================
+    //累计的连续按下按键的次数，用来判断double trigger
+    //public int accumulatedCount = 0;
+    //public bool doublePressed = false;
+
+
+    //======================== 长按功能 ===================================
+    //实现长按功能
+    public bool isDelaying = false;
+    public float delayingDuration = 0.15f;
+    private ButtonTimer delayTimer = new ButtonTimer();
+
+
+    public void Tick(bool input)
+    {
+        extTimer.Tick();
+        delayTimer.Tick();
+
+        currenState = input;
+
+        isPressing = currenState;
+
+        onPressed = false;
+        onReleased = false;
+        isDelaying = false;
+        if (currenState != lastState)
+        {
+            if(currenState == true)
+            {
+                onPressed = true;
+
+                //====================== 长按功能 ========================
+                StartTimer(delayTimer, delayingDuration);
+
+                //====================== 双击功能 ========================
+                //      ============ 正常版 ===============
+                //增加累计数
+                //accumulatedCount++;
+                ////从按下按键那一刻开始计时，如果正在计时中，就不要重新开启计时器
+                //if(!isExtending)
+                //    StartTimer(extTimer, extendingDuration);
+            }
+            else
+            {
+                onReleased = true;
+                //====================== 双击功能 ========================
+                //      ============ 黑魂版 ===============
+                StartTimer(extTimer, extendingDuration);
+            }
+        }
+        lastState = currenState;
+
+        //====================== 长按功能 ========================
+        if (delayTimer.state == ButtonTimer.STATE.RUN)
+        {
+            isDelaying = true;
+        }
+
+        //========================== 双击功能 =============================
+
+        //    ================== 黑魂版 ========================
+        //判断是否处于连按延长时间
+        isExtending = (extTimer.state == ButtonTimer.STATE.RUN);
+
+        //    ================== 正常版（额外加上以下代码） ================
+        //判断是否在连按延长时间内连续按两次
+        //doublePressed = false;
+        //if (!isExtending)
+        //{
+        //    doublePressed = false;
+        //    accumulatedCount = 0;
+        //}
+        //else if(accumulatedCount == 2)
+        //{
+        //    doublePressed = true;
+        //    accumulatedCount = 0;
+        //}
+    }
+
+    public void StartTimer(ButtonTimer timer, float duration)
+    {
+        timer.duration = duration;
+        timer.GO();
+    }
+}
+
+
+```
+
+在keyboardInput中修改各类信号的输入。
+
+keyboard是由前面的playerInput改名的，将一些会和手柄输入的代码抽象出来放在父类IUserInput中。
+```
+void Update()
+    {
+        //更新各类按钮的状态，这些对象在父类中IUserInput实例化了
+        ButtonJump.Tick(Input.GetKey(keyJump));
+        ButtonAttack.Tick(Input.GetKey(keyAttack));
+        ButtonRun.Tick(Input.GetKey(keyRun));
+  
+
+        //run = Input.GetKey(keyRun);
+        //run信号为长按,黑魂中run是长按才会触发的
+        run = (ButtonRun.isPressing && !ButtonRun.isDelaying) || ButtonRun.isExtending;
+        //在奔跑过程中再按一次奔跑键才能跳跃
+        jump = ButtonJump.onPressed && ButtonRun.isPressing;
+        //按下奔跑键立马释放就后跳，如果此时还按着方向键就向前翻滚，方向键在状态机中判断
+        roll = ButtonRun.onReleased && ButtonRun.isDelaying;
+    }
+```
+
 # 战斗系统
-## 动画
+## 1、动画
 
 新建攻击[动画层](https://docs.unity3d.com/cn/2019.4/Manual/AnimationLayers.html)，添加攻击动画。
 
@@ -941,152 +1229,35 @@ public class leftArmAnimFix : MonoBehaviour
 
 新添加盾牌动画，因为有了新的盾牌放下的动画了，所以OnAnimatorIK用不上了。
 
+## 2、锁定功能
 
+新增LockOn按钮和信号，在cameraControllor中控制改变锁定的状态。
 
-# 优化1
-
-## 封装信号
-
-将trigger once 类型信号封装成一个类，如jump、attack，减少重复代码。
+当按下LockOn按钮时，调用cameraController中changeLockOn函数去尝试锁定敌人或取消锁定。
 
 ```
-public class ButtonInput 
+public class CameraController : MonoBehaviour
 {
-    public bool isPressing = false;
-    //刚刚按下
-    public bool onPressed = false;
-    //刚刚释放
-    public bool onReleased = false;
+    //被锁定的object
+    private GameObject lockTarget;
 
-    private bool currenState = false;
-    private bool lastState = false;
-
-    public void Tick(bool input)
+    //反转LockOn状态
+    public void ChangeLockOn()
     {
-        currenState = input;
-
-        isPressing = currenState;
-
-        onPressed = false;
-        onReleased = false;
-        if(currenState != lastState)
+        if(lockTarget == null)
         {
-            if(currenState == true)
-                onPressed = true;
-            else
-                onReleased = true;
+            //try to lock a object
         }
-
-        lastState = currenState;
-    }
-}
-```
-
-# 计时器类
-
-## 实现
-
-```
-public class ButtonTimer 
-{
-    //计时器当前的状态
-    public enum STATE
-    {
-        FINISHED,
-        RUN
-    }
-    public STATE state;
-
-    //计时上限
-    public float duration = 1.0f;
-    //已持续的时间
-    private float elapsedTime = 0;
-
-    public void Tick(float deltaTime)
-    {
-        //开始计时
-        if(state == STATE.RUN)
+        else
         {
-            elapsedTime += Time.deltaTime;
-            if (elapsedTime >= duration)
-                state = STATE.FINISHED;
+            //release locked object
         }
     }
 
-    //启动计时器
-    public void GO()
-    {
-        elapsedTime = 0;
-        state = STATE.RUN;
-    }
-}
 ```
 
-## double trigger
+利用physics.overlapBox来实现锁定。
 
-利用计数器实现double trigger
-```
-public class ButtonInput 
-{
-    //计时上限
-    public float extendingDuration = 0.3f;
-
-    //是否处于延长时间内,用来判断double trigger
-    public bool isExtending = false;
-
-    //延长时间的计时器，用来实现double trigger
-    private ButtonTimer extTimer = new ButtonTimer();
-
-    //累计的按下按键的次数，用来判断double trigger
-    public int accumulatedCount = 0;
-    //是否触发double trigger
-    public bool doublePressed = false;
-
-    public void Tick(bool input)
-    {
-        extTimer.Tick(Time.deltaTime);
-
-        currenState = input;
-
-        isPressing = currenState;
-
-        onPressed = false;
-        onReleased = false;
-
-        if (currenState != lastState)
-        {
-            if(currenState == true)
-            {
-                onPressed = true;
-                //增加累计数
-                accumulatedCount++;
-                //从按下按键那一刻开始计时，如果正在计时中，就不要重新开启计时器
-                if(!isExtending)
-                    StartTimer(extTimer, extendingDuration);
-            }
-            else
-            {
-                onReleased = true;
-            }
-        }
-        lastState = currenState;
-        
-        //判断是否处于延长时间
-        isExtending = (extTimer.state == ButtonTimer.STATE.RUN);
-        //判断是否在延长时间内连续按两次
-        doublePressed = false;
-        if (!isExtending)
-        {
-            doublePressed = false;
-            accumulatedCount = 0;
-        }
-        else if(accumulatedCount == 2)
-        {
-            doublePressed = true;
-            accumulatedCount = 0;
-        }
-    }
-```
 
 
 
