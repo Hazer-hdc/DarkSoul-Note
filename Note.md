@@ -1231,6 +1231,8 @@ public class leftArmAnimFix : MonoBehaviour
 
 ## 2、锁定功能
 
+### 1、overlapBox
+
 新增LockOn按钮和信号，在cameraControllor中控制改变锁定的状态。
 
 当按下LockOn按钮时，调用cameraController中changeLockOn函数去尝试锁定敌人或取消锁定。
@@ -1240,6 +1242,7 @@ public class CameraController : MonoBehaviour
 {
     //被锁定的object
     private GameObject lockTarget;
+    public bool lockOnState;
 
     //反转LockOn状态
     public void ChangeLockOn()
@@ -1256,7 +1259,124 @@ public class CameraController : MonoBehaviour
 
 ```
 
-利用physics.overlapBox来实现锁定。
+利用**physics.overlapBox**来检测前方是否由敌人，实现锁定。
+
+```
+ //反转LockOn状态
+    public void ChangeLockOn()
+    {
+        Vector3 modelOrigin = model.transform.position + new Vector3(0, 1, 0);
+
+        //因为用的是playerHandler的正前方为中心，所以永远在摄像机的正前方锁定敌人。
+        Vector3 boxCenter = modelOrigin + playerHandler.transform.forward * 5.0f;
+
+        Collider[] cols = Physics.OverlapBox(boxCenter, new Vector3(0.5f, 0.5f, 5.0f)
+            , playerHandler.transform.rotation,LayerMask.GetMask("Enemy"));
+
+        if(cols.Length > 0)
+        {
+            //如果连续对同一个物体按两次lockOn，就会取消锁定，否则锁定该物体
+            if(lockTarget != cols[0].gameObject)
+            {
+                lockTarget = cols[0].gameObject;
+                lockOnState = true;
+            }
+            else
+            {
+                lockTarget = null;
+                lockOnState = false;
+            } 
+        }
+        else
+        {
+            lockTarget = null;
+            lockOnState = false;
+        }
+    }
+```
+
+在锁定敌人后，也将摄像机的水平旋转锁定。
+修改cameraController代码
+
+```
+private void FixedUpdate()
+    {
+        //没有锁定敌人时，才可以自由旋转相机，否则摄像机一直看向敌人
+        if(lockTarget == null)
+        {
+            //保存模型当前旋转角度，确保相机旋转时，角色模型不动
+            currentModelEuler = model.transform.eulerAngles;
+            //相机水平旋转
+            playerHandler.transform.Rotate(Vector3.up, pi.Jright);
+
+            //相机垂直旋转
+            currentVerticalAngle += -pi.Jup;
+            currentVerticalAngle = Mathf.Clamp(currentVerticalAngle, -40, 30);
+            cameraHandler.transform.localEulerAngles = new Vector3(currentVerticalAngle, 0, 0);
+
+            //确保相机旋转时，角色模型不动
+            model.transform.eulerAngles = currentModelEuler;
+        }
+        else
+        {
+            Vector3 tempForward = lockTarget.transform.position - model.transform.position;
+            tempForward.y = 0;
+            playerHandler.transform.forward = tempForward;
+        }
+```
+
+### 2、2D混合树
+
+有了锁定功能后，由于还没有左右走的动画，当锁定敌人时，一直面朝敌人移动就会出错。所以现在要添加新的左右走动画，并更改ground状态的混合树为2D Freedom Direction，并新增一个right参数。
+
+![](image/2021-04-17-22-17-55.png)
+
+再完善斜向走和跑。
+
+![](image/2021-04-17-22-44-05.png)
+
+
+### 3、角色的移动
+
+ 修改角色的正前方与移动速度。
+ ```
+ //处于锁定敌人的状态与不锁定时移动方式不同
+        if(cameraCtr.lockOnState == false)
+        {
+            //将原理正常状态时的移动代码放入这里。
+        }
+        else
+        {
+            //角色要时刻面向被锁定的敌人
+            //模型的前方为playerController的前方
+            model.transform.forward = transform.forward;
+            if (!lockPlanar)
+            {
+                //此时移动的输入要分为两个轴了，所以不能用Dmag，而是forwardDirection
+                planarVec = pi.forwardDirection * walkSpeed * (pi.run ? runMultiplier : 1.0f);
+            }
+        }
+ ```
+
+ 修改移动动画信号输入
+
+```
+//锁定与未锁定状态的移动动画
+        if(cameraCtr.lockOnState == false)
+        {
+            if (pi.Dmag > 0)
+            {
+                //切换角色行走动画，并且通过lerp让行走与奔跑之间有个平滑的过渡。
+                anim.SetFloat("forward", pi.Dmag * Mathf.Lerp(anim.GetFloat("forward"), (pi.run ? 2.0f : 1.0f), 0.5f));
+                anim.SetFloat("right", 0);
+            }
+        }
+        else
+        {
+            anim.SetFloat("forward", pi.Dup * (pi.run ? 2.0f : 1.0f));
+            anim.SetFloat("right", pi.Dright * (pi.run ? 2.0f : 1.0f));
+        }
+```
 
 
 
