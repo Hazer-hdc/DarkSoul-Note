@@ -1338,7 +1338,7 @@ private void FixedUpdate()
 
 ### 3、角色的移动
 
- 修改角色的正前方与移动速度。
+ 修改角色的正前方与移动速度。新增一个bool变量trackDirection，用来判断是否在锁定期间进行跳跃或翻滚。
  ```
  //处于锁定敌人的状态与不锁定时移动方式不同
         if(cameraCtr.lockOnState == false)
@@ -1347,11 +1347,19 @@ private void FixedUpdate()
         }
         else
         {
-            //角色要时刻面向被锁定的敌人
-            //模型的前方为playerController的前方
-            model.transform.forward = transform.forward;
-            if (!lockPlanar)
+            //角色要时刻面向被锁定的敌人,模型的前方为playerController的前方（指向敌人）。
+            //除非角色在此期间进行跳跃或翻滚，就不让模型指向敌人了。
+            if (trackDirection == false)
             {
+                model.transform.forward = transform.forward;
+            }
+            else
+            {
+                model.transform.forward = planarVec.normalized;
+            }
+
+            if (!lockPlanar)
+            { 
                 //此时移动的输入要分为两个轴了，所以不能用Dmag，而是forwardDirection
                 planarVec = pi.forwardDirection * walkSpeed * (pi.run ? runMultiplier : 1.0f);
             }
@@ -1378,6 +1386,41 @@ private void FixedUpdate()
         }
 ```
 
+### 4、完善锁定UI
+
+在CameraController中修改代码
+
+首先将敌人的模型也放在一个空的EnemyHandler底下，这个空的EnemyHandler的原点在模型脚底的位置。collider也从敌人模型中转到这个EnemyHandler。
+
+因为要计算enemyHandler的中央位置，所以需要知道collider的半高。干脆把被锁定的敌人和敌人的半高封装成一个内部类
+
+将lockTarget封装成一个内部类
+```
+public class LockTarget
+    {
+        public GameObject obj;
+        public float halfHeight;
+
+        public LockTarget(GameObject _obj, float _halfHeight)
+        {
+            obj = _obj;
+            halfHeight = _halfHeight;
+        }
+    }
+```
+
+修改锁定UI的位置
+```
+ private void FixedUpdate()
+    {
+        //让锁定的图标一直在敌人的中央
+        if(lockTarget != null)
+        {
+            lockIcon.rectTransform.position = Camera.main.WorldToScreenPoint(
+                lockTarget.obj.transform.position + new Vector3(0, lockTarget.halfHeight, 0));
+        }
+    }
+```
 
 
 
