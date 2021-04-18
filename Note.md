@@ -1409,7 +1409,7 @@ public class LockTarget
     }
 ```
 
-修改锁定UI的位置
+修改锁定UI的位置，利用**camera.worldToScreenPoint**
 ```
  private void FixedUpdate()
     {
@@ -1421,6 +1421,69 @@ public class LockTarget
         }
     }
 ```
+
+## 3、attack子状态机
+
+在base layer里面，右键新建一个Sub-State-Machine，将原来attack动画层的内容复制进去。
+
+![](image/2021-04-18-15-18-34.png)
+
+![](image/2021-04-18-15-18-51.png)
+
+删除了attack动画层后，actorController代码也要进行相应的修改，去除冗余代码。里面切换动画层权重的代码也不要了。
+
+## 4、左右手攻击动画的分离
+
+在attack子状态机中，copy右手攻击的动画，上面是右手攻击，下面是左手攻击。
+
+![](image/2021-04-18-15-52-34.png)
+
+勾选三个左手动画的mirror选项，用来镜像动画。
+![](image/2021-04-18-15-53-43.png)
+
+新增mirrorAttack参数，当mirrorAttack为false就播放右手攻击动画，否则播放左手攻击动画。
+
+
+在黑魂中，装在左手上的东西，只有盾才能举.
+
+将actorcontroller中attack信号，改为rightAttack和leftAttack信号，分别为左手攻击和右手攻击，再更改相应的代码得到基本的左右手攻击。
+
+鼠标左键右手攻击，鼠标右键左手攻击。
+
+## 5、敌人AI
+
+先直接复制一个playerHandler来作为敌人。
+
+修改cameraController代码，新加一个bool变量（isAI）。AI不可以控制main camera和锁定UI，通过判断isAI来修改变量。
+
+新增一个EnemyAIIput脚本，用来控制AI的输入信号。
+**Start函数也可以用来当协程使用。**
+```
+public class EnemyAIInput : IUserInput
+{
+
+
+    // Start is called before the first frame update
+    IEnumerator Start()
+    {
+        rightAttack = true;
+        yield return 0;
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        
+    }
+}
+
+```
+
+## 6、受击状态
+
+在base layer动画层中新增受击动画，从Any State过渡到受击。
+
+
 
 
 
