@@ -1482,6 +1482,50 @@ public class EnemyAIInput : IUserInput
 ## 6、受击状态
 
 在base layer动画层中新增受击动画，从Any State过渡到受击。
+![](image/2021-04-18-20-21-32.png)
+
+## 7、武器开关
+
+利用动画事件来控制武器的collider的开关，让武器在被挥出去的某一段时间内collider才开启。
+
+# Manager类
+
+游戏中由ActorManager来作为中枢处理游戏逻辑，只有ActorManager知道角色与周边环境的关系与交互。比如如果有两个人的话，由他们两个人的ActorManager互相沟通。
+
+而ActorManager下面又有很多其他类别的Manager，这些Manager检测到事件后交给ActorMangaer进行处理，判断是否要让角色做出相应的反应。
+
+![](image/2021-04-18-20-26-23.png)
+
+
+## Bettle Manager
+
+新增一个Bettle Manager类，放在playerHandler底下，它需要一个新的capsuleCollirer用来做防御碰撞框。
+
+![](image/2021-04-18-20-46-29.png)
+
+调整它的layer为BettleManager，并修改物理碰撞矩阵，让Weapon层可以和BettleManager层碰撞。
+
+## Actor Manager
+
+新增一个Actor Manager类，放在playerHandler底下。
+
+让ActorManager和BettleManager互相引用。ActorManager有actorController的引用。
+
+**由bettleManager检测玩家是否被敌人武器砍到 ----> bettleManager呼叫ActorManager中的BeHit函数 ----> ActorManager再呼叫ActorController中的IssueTrigger函数触发动画。**
+
+
+## WeaponManager
+
+新增WeaponManager类，用来控制武器的collider的开关。
+
+WeaponManager下面会有两个WeaponHandle，之所以是两个是因为可以双持武器。WeaponHandle下面又会有WeaponDate。
+
+而WeaponHandle在前面编写过程中，塞在了模型的深层，和模型的两只手臂一个层级。
+
+
+
+
+
 
 
 
