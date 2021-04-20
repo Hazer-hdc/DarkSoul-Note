@@ -1443,6 +1443,8 @@ public class LockTarget
 
 新增mirrorAttack参数，当mirrorAttack为false就播放右手攻击动画，否则播放左手攻击动画。
 
+分别将右手和左手攻击动画的tag为attackR、attackL，这是为了能够在代码中判断右手和左手。
+
 
 在黑魂中，装在左手上的东西，只有盾才能举.
 
@@ -1520,7 +1522,7 @@ public class EnemyAIInput : IUserInput
 
 WeaponManager下面会有两个WeaponHandle，之所以是两个是因为可以双持武器。WeaponHandle下面又会有WeaponDate。
 
-而WeaponHandle在前面编写过程中，塞在了模型的深层，和模型的两只手臂一个层级。
+而WeaponHandle在前面编写过程中，塞在了模型的深层，和模型的两只手臂一个层级，而且主角和敌人公用同一套WeaponHandle**因此需要自己编写一个深度遍历
 
 
 
