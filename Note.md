@@ -1513,7 +1513,7 @@ public class EnemyAIInput : IUserInput
 
 让ActorManager和BettleManager互相引用。ActorManager有actorController的引用。
 
-**由bettleManager检测玩家是否被敌人武器砍到 ----> bettleManager呼叫ActorManager中的BeHit函数 ----> ActorManager再呼叫ActorController中的IssueTrigger函数触发动画。**
+**由bettleManager检测玩家是否被敌人武器砍到 ----> bettleManager呼叫ActorManager中的TryDoDemage函数 ----> ActorManager再呼叫ActorController中的IssueTrigger函数触发动画。**
 
 
 ## WeaponManager
@@ -1522,13 +1522,326 @@ public class EnemyAIInput : IUserInput
 
 WeaponManager下面会有两个WeaponHandle，之所以是两个是因为可以双持武器。WeaponHandle下面又会有WeaponDate。
 
-而WeaponHandle在前面编写过程中，塞在了模型的深层，和模型的两只手臂一个层级，而且主角和敌人公用同一套WeaponHandle**因此需要自己编写一个深度遍历
+## StateManager
+
+Statemanager与ActorManager是双向持有的关系，StateManager复制存储角色的各种属性，它可以从外部文件读取角色数据，如生命值。
+
+在StateManager中添加生命值等变量，**增加ChangeHP函数**，ActorManager的BeHit函数会尝试去调用该函数来修改生命值。
+
+ 
+
+# 优化 ：全局消息中心
+
+**建立一个全局的消息中心来处理各种动画状态的消息，代替unity自己的sendMessage。**
+
+## 单例模型
+用来控制消息中心只有一个全局的实例。
+
+```
+using System;
+using System.Reflection;
+
+public  abstract class SingleTon<T> where T : class
+{
+    private static T instance = null;
+
+    //多线程安全机制
+    private static readonly object locker = new object();
+
+    public static T Instance
+    {
+        get
+        {
+            //线程锁
+            lock (locker)
+            {
+                if (null == instance)
+                {
+                    //反射获得T的构造函数。
+                    var octors = typeof(T).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic);
+                    //获得T的无参构造函数
+                    var octor = Array.Find(octors, c => c.GetParameters().Length == 0);
+
+                    if (null == octor)
+                    {
+                        throw new Exception("No NonPublic constructor without 0 parameter");
+                    }
+
+                    instance = octor.Invoke(null) as T;
+                }
+                return instance;
+            }
+        }
+        
+    }
+
+    /// <summary>
+    /// 构造函数
+    /// 避免外界new
+    /// </summary>
+    protected SingleTon() { }
+}
+
+```
+
+## Message类
+
+用来存储发送消息的物体的信息。
+
+```
+public class Message
+{
+    public int Type  //发送的消息类型
+    {
+        get;
+        private set;
+    }
+    public object Body  //消息主体
+    {
+        get;
+        set;
+    }
+
+    /// <summary>
+    /// 构造函数
+    /// </summary>
+    /// <param name="type">消息类型</param>
+    /// <param name="body">消息体</param>
+    public Message(int type, object body)
+    {
+        Type = type;
+        Body = body;
+    }
+}
+```
+## MessageCenter类
+
+```
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+
+//移动事件
+public enum MotionEvent
+{
+    
+}
+
+//战斗事件
+public enum BattleEvent
+{
+    OnAttackTest = 1000
+}
+
+//消息中心
+public class MessageCenter : SingleTon<MessageCenter>
+{
+
+    //消息委托
+    public delegate void messageDelHandle(Message message = null);
+    //消息字典
+    public static Dictionary<int, messageDelHandle> messageMap = new Dictionary<int, messageDelHandle>();
+
+    /// <summary>
+    /// 构造函数
+    /// 避免外界new
+    /// </summary>
+    private MessageCenter() { }
+
+    //注册监听，让del监听messageType
+    public void AddListener(int messageType, messageDelHandle del)
+    {
+        if (del == null) return;
+        //获得messageType当前的全部监听者
+        messageMap.TryGetValue(messageType, out messageDelHandle temp);
+        //将新的监听者接在后面
+        messageMap[messageType] = (messageDelHandle)Delegate.Combine(temp, del);
+        
+    }
+
+    public void RemoveListener(int messageType, messageDelHandle del)
+    {
+        if (del == null) return;
+        
+        messageMap[messageType] = (messageDelHandle)Delegate.Remove(messageMap[messageType], del);
+    }
+
+    
+    public void Clear()
+    {
+        messageMap.Clear();
+    }
+
+    /// <summary>
+    /// 发送消息
+    /// </summary>
+    /// <param name="messageType">消息类型 </param>
+    /// <param name="body"> 发送消息主体 </param>
+    public void SendMessage(int messageType, object body = null)
+    {
+        
+        messageDelHandle handle;
+        if (messageMap.TryGetValue(messageType, out handle))
+        {
+            Message evt = new Message(messageType, body);
+            try
+            {
+                if(handle != null)
+                {
+                    handle.Invoke(evt);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.Print("SendMessage:", evt.Type.ToString(), e.Message, e.StackTrace, e);
+            }
+        }
+
+    }
 
 
 
+    #region 枚举类型接口
+
+    #region MessageType
+    public void AddListener(MotionEvent messageType, messageDelHandle handle)
+    {
+        AddListener((int)messageType, handle);
+    }
+    public void RemoveListener(MotionEvent messageType, messageDelHandle handle)
+    {
+        RemoveListener((int)messageType, handle);
+    }
+    public void SendMessage(MotionEvent messageType, object body = null)
+    {
+        SendMessage((int)messageType, body);
+    }
+    #endregion
+
+
+    #region BattleEvent
+    public void AddListener(BattleEvent messageType, messageDelHandle handle)
+    {
+        AddListener((int)messageType, handle);
+    }
+    public void RemoveListener(BattleEvent messageType, messageDelHandle handle)
+    {
+        RemoveListener((int)messageType, handle);
+    }
+    public void SendMessage(BattleEvent messageType, object body = null)
+    {
+        SendMessage((int)messageType, body);
+    }
+    #endregion
+
+
+ 
+    #endregion
 
 
 
+}
+
+```
+
+## 测试
+
+**在actorController脚本中注册监听者.**
+```
+    //接收消息的模型
+    private GameObject receivedMessageModel;
+
+   /// <summary>
+    /// 先消息系统注册监听者
+    /// </summary>
+    private void AddListener()
+    {
+        MessageCenter.Instance.AddListener(BattleEvent.OnAttackTest, OnAttackTest);
+    }
+
+    public void OnAttackTest(Message message)
+    {
+        //取得发送消息的主体
+        receivedMessageModel = (GameObject)message.Body;
+        //判断该actorController的模型是否与发送消息的模型一致
+        //不判断这个，就会导致场景中一个模型发送消息，所以挂载了actorController的模型都受到影响。
+        if (model == receivedMessageModel)
+        {
+            pi.inputEnable = false;
+        }
+        Debug.Log("消息系统测试");
+    }
+```
+
+**将FSMOnEnterMessage脚本挂在动画状态机中某个状态下面。**
+```
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class FSMOnEnter : StateMachineBehaviour
+{
+    //MotionEvent类型消息的集合
+    public MotionEvent[] motionMessages;
+    //BattleEvent类型消息的集合
+    public BattleEvent[] battleMessages;
+
+    // OnStateEnter is called when a transition starts and the state machine starts to evaluate this state
+    override public void OnStateEnter(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
+    {
+        //发送这个消息的Handler，例如PlayerHandler，EnemyHandler
+        GameObject handler = animator.transform.parent.gameObject;
+        //遍历所有想要发送的消息
+        if (motionMessages.Length > 0)
+            foreach (var msg in motionMessages)
+            {
+                MessageCenter.Instance.SendMessage(msg, handler);
+            }
+
+        if (battleMessages.Length > 0)
+            foreach (var msg in battleMessages)
+            {
+                MessageCenter.Instance.SendMessage(msg, handler);
+            }
+    }
+}
+```
+
+![](image/2021-04-23-18-47-42.png)
+
+
+![](image/2021-04-23-18-59-30.png)
+
+## 缺点1
+
+由于玩家和敌人公用同一个版本actorController脚本，就会导致在actorController中添加一个监听者时，会有多份副本。
+
+例如上面示例中OnAttackTest方法，每一个敌人和玩家都有一个对应的OnAttackTest委托。**当某一个敌人发送OnAttackTest消息时，就会触发所有OnAttackTest委托**，所以需要判断所有副本所属的GameObject和发送消息的GameObject是否一致，一致才会有所作用。
+例如：
+```
+public void IsGround(Message message)
+{ 
+    //判断该actorController的模型是否与发送消息的模型一致
+        //不判断这个，就会导致场景中一个模型发送消息，所有挂载了actorController的模型都受到影响。
+    if (receivedMessageHandler == (GameObject)message.Body)
+    {
+        anim.SetBool("isGround", true);
+    }
+}
+```
+但我希望某个敌人发送OnAttackTest消息时，就触发这个敌人的OnAttackTest委托。
+
+## 缺点2
+
+在FSM代码中（例如FSMOnEnter）需要将所有的类型消息的枚举都添加进去，
+
+```
+public class FSMOnEnterMessage : StateMachineBehaviour
+{
+    public MotionEvent[] motionMessages;
+    public BattleEvent[] battleMessages;
+```
+这就导致一旦新增新的类型的消息，就得修改所有的FSM代码。
 
 
 
