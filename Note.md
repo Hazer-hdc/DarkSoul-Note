@@ -1844,6 +1844,95 @@ public class FSMOnEnterMessage : StateMachineBehaviour
 这就导致一旦新增新的类型的消息，就得修改所有的FSM代码。
 
 
+# 战斗系统2
+
+## 状态标签
+
+在StateManager中存储角色各类状态标签。
+
+```
+    public bool isGround;
+    public bool isJump;
+    public bool isRoll;
+    public bool isFall;
+    public bool isJab;
+    public bool isAttack;
+    public bool isHit;
+    public bool isDie;
+    //是否在防御时被攻击到
+    public bool isBolcked;
+    public bool isDefense;
+    
+    private void Update()
+    {
+        isGround = am.ac.checkState("ground");
+        isJump = am.ac.checkState("jump");
+        isRoll = am.ac.checkState("roll");
+        isFall = am.ac.checkState("fall");
+        isJab = am.ac.checkState("jab");
+        isAttack = am.ac.checkStateTag("attackR") || am.ac.checkStateTag("attackL");
+        isHit = am.ac.checkState("fromImpace");
+        isDie = am.ac.checkState("die");
+        isBolcked = am.ac.checkState("blocked",animDefenseLayer);
+        isDefense = am.ac.checkState("defense1h",animDefenseLayer);
+    }
+```
+**目前这样写有点笨，而且耦合高。**
+
+**通过这些状态标签，组合出防御状态和无敌状态。**
+
+## 盾反
+
+### 前置准备
+
+先拉动画，又新增一个BeParried参数。
+
+在动画状态机base layer中新添加一个子状态机BeParried。同时将一些移动相关的状态整合到一个子状态机localMotion中。
+
+删除defense动画层，动画层是用来管理身体不同部位的状态机，
+比如一个用于行走/跳跃的动画层，一个用来射击的动画层。而defense各种动画需要全身来控制，所以额外一个动画层没有必要了。
+
+新增换挡信号shift，用来区分轻攻击和重攻击。shift + attack 为重攻击。
+
+[子状态机相关](https://www.bilibili.com/video/BV1qp411Z7qt?p=21)
+### 挂载weaponController
+
+对于两个角色间的战斗：A砍向B。A的武器的collider会碰撞到B的battleManager的collider。
+
+对于B来说，B的battleManager会向B的actorManager报告：“老大，你被砍了。”此时B的老大actorManager必须和A的老大actorManager谈判，看看A的actorManager的各种状态：是否带Buff、是否处于愤怒状态....，以此来得出B该做出什么反应。
+
+所以必须从A的武器的collider得到A的老大actorManager。
+![](image/2021-04-24-21-39-27.png)
+
+**所以把WeaponController挂载在WeaponHandle上面，同时WeaponController要有WeaponManager的引用**
+
+
+### 模型扭曲问题
+
+导入一个新模型，将它的animation type设为Humanoid，设置完Avatar后发现模型有扭曲现象。
+
+![](image/2021-04-24-16-10-53.png)
+
+#### 原因1：
+**在这里是由于这个原因：该模型有几只unity不认识的骨头。**
+
+例如下面的小腿扭转骨，旋转这根骨头就有了上面腿部扭曲。
+![](image/2021-04-24-16-12-55.png)
+
+![](image/2021-04-24-16-17-17.png)
+
+unity没有帮我们调整它，但它对整个模型是有影响的。所以不调的话，这根骨头就待原地，模型就会出错。
+
+这个骨是用来垂直于小腿方向旋转的，用来模拟轻微的扭转。跟转动手腕一样，当开门时，小臂会旋转。这是非常精细的骨头。
+
+**解决方法：把这些扭转骨放在它们同层级的其他骨头底下。**
+1、先将模型拉到世界中，在2018版本中要先将模型解压才能拖到里面的物体，右键模型点击UnPack。
+2、将模型做成预制件，然后在预制件中拖到这些骨头。
+3、最后回到原来的动画剪辑中，将修改好的模型预制件拖进动画剪辑的演示窗口，让新的模型来演出动画。
+
+#### 原因2：
+
+avatar不对。
 
 
 
