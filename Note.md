@@ -1906,6 +1906,48 @@ public class FSMOnEnterMessage : StateMachineBehaviour
 
 **所以把WeaponController挂载在WeaponHandle上面，同时WeaponController要有WeaponManager的引用**
 
+### 逻辑
+
+在StatemManager中新增加一个bool变量：isCounterBack，在盾反时间内才会true。
+
+通过动画事件来修改这个isCounterBack信号。
+
+最后在ActorManager中进行攻击判断，TruDoDamage有太多if else 了，之后可以考虑将这些信号转为枚举类型，用switch。
+```
+//传递对方的Weaponcontroller进来
+    public void TryDoDemage(WeaponController targetWc)
+    {
+        if (sm.isCounterBacker)
+        {
+            targetWc.wm.am.BeCounterBack();
+        }
+        //如果处于无敌状态，什么都不要做
+        //如果处于防御状态，那就触发bloacked格挡
+        //否则扣血
+        else if (sm.isInvincible)
+        {
+            return;
+        }
+        else if (sm.isDefense)
+        {
+            Blocked();
+        }
+        else
+        {
+            sm.ChangeHP(-5);
+            if (sm.HP <= 0)
+            {
+                Die();
+            }
+            else
+            {
+                Hit();
+            }
+        }
+    }
+```
+
+
 
 ### 模型扭曲问题
 
@@ -1933,6 +1975,149 @@ unity没有帮我们调整它，但它对整个模型是有影响的。所以不
 #### 原因2：
 
 avatar不对。
+
+## 攻防几何限制
+
+现在角色站在敌人的右后方也能盾反敌人，这个范围太大了，所以需要在攻击判断角色和敌人的相对位置。
+
+当A攻击B时，**A的forward向量**与**向量A->B**之间的**夹角**小于某个值，攻击才会奏效。
+
+![](image/2021-04-26-11-58-59.png)
+
+如果B对A进行盾反，要判断B与A是否基本面对面，即判断它们的forward的夹角是否足够大。同时要判断A是否在B的盾反范围内。
+
+![](image/2021-04-26-16-12-17.png)
+
+在BattleManager中。
+
+```
+ private void OnTriggerEnter(Collider other)
+    {
+        WeaponController targetWc = other.GetComponentInParent<WeaponController>();
+        if(other.tag == "Weapon")
+        {
+            GameObject attacker = targetWc.wm.am.gameObject;
+            GameObject receiver = this.am.gameObject;
+
+            //敌人->玩家的方向
+            Vector3 attackingDir = receiver.transform.position - attacker.transform.position;
+            //玩家->敌人的方向
+            Vector3 coutnerDir = attacker.transform.position - receiver.transform.position;
+
+            //敌人的正前方与敌人->玩家的方向
+            float attackingAngle = Vector3.Angle(attacker.transform.forward, attackingDir);
+
+            //敌人的前方和玩家的前方的夹角,面对面的夹角
+            float counterAngle1 = Vector3.Angle(attacker.transform.forward, receiver.transform.forward);
+            //敌人是否在玩家的盾反范围内
+            float counterAngle2 = Vector3.Angle(coutnerDir, receiver.transform.forward);
+
+            //角色与敌人此时是否面对面，并且是否处于玩家的盾反范围内，决定了能否盾反。
+            bool counterBackValid = (counterAngle1 < halfFaceToFaceAngle && Mathf.Abs(counterAngle2 - 180) < halfCounterBackAngle);
+            
+            //处于有效攻击角度才会TryDoDamage
+            if (attackingAngle <= halfAttackAngle)
+            {
+                am.TryDoDemage(targetWc, counterBackValid);
+            }
+
+        }
+```
+
+# Timeline 和 Playable Director 组件
+
+官方文档：
+[Tileline时间轴](https://docs.unity3d.com/cn/2018.4/Manual/TimelineOverview.html)
+[Playable Director 组件](https://docs.unity3d.com/cn/2018.4/Manual/class-PlayableDirector.html)
+
+
+## 前置工作
+
+新建一个gameObject：Director，给其添加Playable Director。
+
+在asset中新建一个Timeline文件：stab_timeline，并将其赋给Director的Playable属性。
+![](image/2021-05-01-15-34-57.png)
+
+
+在stab_timeline中新添加动画轨道。
+![](image/2021-05-01-15-34-36.png)
+
+建角色的模型拖进动画轨道的槽中，表示让角色的模型来演这个轨道上的剧本。在动画轨道中新增斩杀动画。
+![](image/2021-05-01-15-45-55.png)
+
+**如果想打断剧本动画，并从头开始播放**
+![](image/2021-05-01-16-36-36.png)
+
+## 更改时间轴轨道绑定
+
+为了在代码中更改与时间轴轨道绑定的资源，让不同的模型来演出。
+
+首先更改轨道名称
+![](image/2021-05-01-17-16-42.png)
+
+![](image/2021-05-01-17-14-00.png)
+![](image/2021-05-01-17-14-25.png)
+
+![](image/2021-05-01-17-16-04.png)
+
+
+## 自定义可播放物
+
+[教程](https://www.bilibili.com/video/BV1qp411Z7qt?p=36)
+
+在Asset store下载官方插件Default playables，里面包含了一些基础的Playable案例
+
+## Timeline结构和Playable结构
+[教程](https://www.bilibili.com/video/BV1qp411Z7qt?p=37&spm_id_from=pageDriver
+)
+
+1、Timeline结构
+
+![](image/2021-05-01-17-52-00.png)
+![](image/2021-05-01-17-53-42.png)
+
+2、Playable结构
+
+playable Track里面是Playable Asset，而Playable Asset里面又可以放脚本
+![](image/2021-05-01-18-00-05.png)
+
+![](image/2021-05-01-18-06-59.png)
+**这些脚本预设的五个方法：**
+OnGraphStart ： 当整个剧本开始时调用一次。
+
+OnGraphStop ： 当整个剧本结束时调用一次。
+
+OnBehaviourPlay ：当该Playable Asset开始播放时调用一次。
+
+OnBehaviourPause ：当该Playable Asset结束播放时调用一次。
+
+PrepareFrame ：当该Playable Asset播放期间时每帧调用一次。
+
+## 官方插件Default Playables
+[教程](https://www.bilibili.com/video/BV1qp411Z7qt?p=37)
+利用官方插件来创建Playable Track
+
+![](image/2021-05-01-18-47-32.png)
+
+创建一个来测试
+![](image/2021-05-01-18-51-23.png)
+
+![](image/2021-05-01-18-51-55.png)
+
+插件会自动创建一些脚本
+![](image/2021-05-01-18-52-32.png)
+
+## Playable Behaviour
+
+点开插件自动创建的脚本
+![](image/2021-05-01-18-58-04.png)
+
+
+测试前面那五个函数
+![](image/2021-05-01-20-58-58.png)
+
+
+
 
 
 
