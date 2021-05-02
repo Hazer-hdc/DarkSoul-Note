@@ -2024,14 +2024,16 @@ avatar不对。
         }
 ```
 
-# Timeline 和 Playable Director 组件
+# Timeline终结技演出
+
+## Timeline 和 Playable Director 组件
 
 官方文档：
 [Tileline时间轴](https://docs.unity3d.com/cn/2018.4/Manual/TimelineOverview.html)
 [Playable Director 组件](https://docs.unity3d.com/cn/2018.4/Manual/class-PlayableDirector.html)
 
 
-## 前置工作
+### 前置工作
 
 新建一个gameObject：Director，给其添加Playable Director。
 
@@ -2048,7 +2050,7 @@ avatar不对。
 **如果想打断剧本动画，并从头开始播放**
 ![](image/2021-05-01-16-36-36.png)
 
-## 更改时间轴轨道绑定
+### 更改时间轴轨道绑定
 
 为了在代码中更改与时间轴轨道绑定的资源，让不同的模型来演出。
 
@@ -2061,13 +2063,13 @@ avatar不对。
 ![](image/2021-05-01-17-16-04.png)
 
 
-## 自定义可播放物
+### 自定义可播放物
 
 [教程](https://www.bilibili.com/video/BV1qp411Z7qt?p=36)
 
 在Asset store下载官方插件Default playables，里面包含了一些基础的Playable案例
 
-## Timeline结构和Playable结构
+### Timeline结构和Playable结构
 [教程](https://www.bilibili.com/video/BV1qp411Z7qt?p=37&spm_id_from=pageDriver
 )
 
@@ -2093,7 +2095,7 @@ OnBehaviourPause ：当该Playable Asset结束播放时调用一次。
 
 PrepareFrame ：当该Playable Asset播放期间时每帧调用一次。
 
-## 官方插件Default Playables
+### 官方插件Default Playables
 [教程](https://www.bilibili.com/video/BV1qp411Z7qt?p=37)
 利用官方插件来创建Playable Track
 
@@ -2107,7 +2109,7 @@ PrepareFrame ：当该Playable Asset播放期间时每帧调用一次。
 插件会自动创建一些脚本
 ![](image/2021-05-01-18-52-32.png)
 
-## Playable Behaviour
+### Playable Behaviour
 
 点开插件自动创建的脚本
 ![](image/2021-05-01-18-58-04.png)
@@ -2118,28 +2120,263 @@ PrepareFrame ：当该Playable Asset播放期间时每帧调用一次。
 
 
 
-## 创建一个新的Playable物
+### 创建一个新的Playable物
 
 创建一个新的Playable物，用来控制敌人和玩家的ActorManager，在终结技期间锁定状态机，不要乱动。
 
-# Director Manager类
+## Director Manager类
 
 ![](image/2021-05-02-12-20-38.png)
 让ActorManager能随时调用导演功能。
 
-让DirectorManager继承自己写的Manager类
+让DirectorManager继承自己写的Manager类。
+
+每个玩家或敌人都有一个DirectorManager，DirectorManager中有多个剧本，按照不同要求来演出不同剧本。
+
+在终结技的剧本中，对于player：attacker是自己，enemy是victim。对于enemy来说，则相反。
 
 ```
+using UnityEngine.Playables;
+using UnityEngine.Timeline;
+
+//每一个挂载了这个脚本的obj，都要求一个PlayableDirector组件，没有的话就会自动创建
+[RequireComponent(typeof(PlayableDirector))]
 public class DirectorManager : Manager
 {
+    PlayableDirector pd;
+
+    //各个剧本资源Timeline
+    [Header("====== Timeline Asset  =========")]
+    public TimelineAsset frontStab;
+
+    //某个剧本中的具体绑定的obj
+    [Header("======  Asset Setting =========")]
+    public ActorManager attackerAm;
+    public ActorManager victimAm;
+
     // Start is called before the first frame update
     void Start()
     {
-        
+        pd = GetComponent<PlayableDirector>();
+        pd.playOnAwake = false;
+
+        //配置剧本,两种方法
+        //pd.PlayableAsset = frontStab;
+        pd.playableAsset = Instantiate(frontStab);
+
+        //遍历剧本的各个轨道，初始化各个轨道的绑定对象
+        //pd.playableAsset.outputs取得的是这个timeline的轨道数组。
+        foreach (var track in pd.playableAsset.outputs)
+        {
+            if (track.streamName == "Attacker's Animation")
+            {
+                //改变这个轨道绑定的目标
+                pd.SetGenericBinding(track.sourceObject, attackerAm);
+            }
+            else if (track.streamName == "Victim's ActorManager")
+            {
+                pd.SetGenericBinding(track.sourceObject, victimAm);
+            }
+            else if (track.streamName == "Attacker Animation")
+            {
+                //改变这个轨道绑定的目标
+                pd.SetGenericBinding(track.sourceObject, attackerAm.GetActorController().GetAnimator());
+            }
+            else if (track.streamName == "Victim Animation")
+            {
+                pd.SetGenericBinding(track.sourceObject, victimAm.GetActorController().GetAnimator());
+            }
+        }
     }
 
 }
 ```
+
+## Interaction Manager类
+
+敌人身上带有一个触发框，在触发框里面才能发动终结技演出。
+
+![](image/2021-05-02-15-18-48.png)
+
+
+对于开宝箱也一样，宝箱有一个触发框，接触了才能触发。
+
+**结构图：**
+![](image/2021-05-02-15-22-16.png)
+
+**InteractionManager会维护一个受击胶囊，跟battleManager的一样，这个受击胶囊是挂在角色自己身上的。**
+
+**EventCasterManager就像上面的红色盒子一样，是挂在别的对象身上的，告诉玩家这边有一个Event，如果你进来的话，就进入了我Event的触发空间。**
+
+
+InteractionManager代码：
+```
+public class InteractionManager : Manager
+{
+
+    private CapsuleCollider interCol;
+    // Start is called before the first frame update
+    void Start()
+    {
+        interCol = GetComponent<CapsuleCollider>();
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        EventCasterManager[] eCastMs = other.GetComponents<EventCasterManager>();
+        foreach(var eCastM in eCastMs)
+        {
+            print(eCastM.eventName);
+        }
+    }
+}
+
+```
+
+新建一个空物体EventCast，专门用来放EventCasterManager脚本，给这个EventCast添加碰撞框，并设置layer。
+
+EventCasterManager代码，每个EventCasterManager装一个Event。
+```
+public class EventCasterManager : Manager
+{
+    public string eventName;
+    public bool isActive;
+
+    private void Start()
+    {
+        am = transform.parent.GetComponent<ActorManager>();
+    }
+}
+
+```
+
+## 测试终结技
+
+
+
+在InteractorManager中：
+利用一个链表来存储碰撞到的触发器。
+```
+public class InteractionManager : Manager
+{
+
+    private CapsuleCollider interCol;
+
+    //保存碰撞到的EventCasteManager
+    public List<EventCasterManager> overlapECsteMs = new List<EventCasterManager>();
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        interCol = GetComponent<CapsuleCollider>();
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        EventCasterManager[] eCastMs = other.GetComponents<EventCasterManager>();
+        foreach(var eCastM in eCastMs)
+        {
+            if (!overlapECsteMs.Contains(eCastM)){
+                overlapECsteMs.Add(eCastM);
+                print("AddTrigger");
+            }
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        EventCasterManager[] eCastMs = other.GetComponents<EventCasterManager>();
+        foreach (var eCastM in eCastMs)
+        {
+            if (overlapECsteMs.Contains(eCastM))
+            {
+                overlapECsteMs.Remove(eCastM);
+            }
+        }
+    }
+}
+```
+
+利用全局消息中心来发送终结技消息。在MessageCenter中新添加OnStabAction
+
+在ActorManager代码中:
+```
+    private void OnStabAction(Message message)
+    {
+        if(im.overlapECsteMs.Count > 0)
+        {
+            if (im.overlapECsteMs[0].eventName == "frontStab")
+            {    
+                //向DirectorManager发送消息，开始播放终结技剧本
+                dm.Play("frontStab", this, im.overlapECsteMs[0].am);
+            }
+        }
+    }
+
+    private void Addlistener()
+    {
+        MessageCenter.Instance.AddListener(InteractionEvent.OnStabAction, OnStabAction);
+    }
+```
+
+在DirectorManager中：配置好各种资源，绑定好各位演员，开始表演。
+```
+public void Play(string timelineName, ActorManager original, ActorManager target)
+    {
+        if (timelineName == "frontStab")
+        {
+            print("frontStab");
+            //配置剧本,两种方法
+            //pd.PlayableAsset = frontStab;
+            pd.playableAsset = Instantiate(frontStab);
+
+            //遍历剧本的各个轨道，初始化各个轨道的绑定对象
+            //pd.playableAsset.outputs取得的是这个timeline的轨道数组。
+            foreach (var track in pd.playableAsset.outputs)
+            {
+                if (track.streamName == "Attacker's ActorManager")
+                {
+                    //改变这个轨道绑定的目标
+                    pd.SetGenericBinding(track.sourceObject, original);
+                }
+                else if (track.streamName == "Victim's ActorManager")
+                {
+                    pd.SetGenericBinding(track.sourceObject, target);
+                }
+                else if (track.streamName == "Attacker Animation")
+                {
+                    //改变这个轨道绑定的目标
+                    pd.SetGenericBinding(track.sourceObject, original.GetActorController().GetAnimator());
+                }
+                else if (track.streamName == "Victim Animation")
+                {
+                    pd.SetGenericBinding(track.sourceObject, target.GetActorController().GetAnimator());
+                }
+            }
+            //播放Timeline
+            pd.Play();
+        }        
+    }
+```
+
+#### 修Bug
+
+目前当终结技剧本演完时，玩家和敌人都会卡进地面一瞬间才会回到idle动画。
+
+这是因为状态机中lock状态，为了剧本演出期间锁定动画状态机，一旦开始播放Timeline就一直待在lock状态，直到timeline结束。而lock状态没有任何动画，timeline一旦结束就会回到lock状态，再回到ground。
+
+**1、所以要给lock状态添加idle动画。**
+
+**2、在timeline动画轨道的后面，接一段idle动画来混合。**
+
+
+
+
+
+
+
+
+
 
 
 
