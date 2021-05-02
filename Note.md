@@ -2118,6 +2118,30 @@ PrepareFrame ：当该Playable Asset播放期间时每帧调用一次。
 
 
 
+## 创建一个新的Playable物
+
+创建一个新的Playable物，用来控制敌人和玩家的ActorManager，在终结技期间锁定状态机，不要乱动。
+
+# Director Manager类
+
+![](image/2021-05-02-12-20-38.png)
+让ActorManager能随时调用导演功能。
+
+让DirectorManager继承自己写的Manager类
+
+```
+public class DirectorManager : Manager
+{
+    // Start is called before the first frame update
+    void Start()
+    {
+        
+    }
+
+}
+```
+
+
 
 
 
