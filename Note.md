@@ -2370,6 +2370,181 @@ public void Play(string timelineName, ActorManager original, ActorManager target
 **2、在timeline动画轨道的后面，接一段idle动画来混合。**
 
 
+让玩家的终结技动画播放完后就立刻能移动，而不用等敌人的动画也播放完。
+
+**3、将最后一个clip的animation extrapolation参数设为None**
+
+## 优化
+
+目前在MyplayableBehaviour脚本中，剧本正式开演了还要取得Director，再获得各种参数，最后才进行操作。这样不好，我们应该在开演前，就把各种参数分配好，开演后直接进行相应的操作，不再去麻烦导演。
+![](image/2021-05-03-10-56-49.png)
+
+让导演喊action的同时，得到全盘的操作，我们需要得到下面两个clip，让对它们的参数进行设置。
+![](image/2021-05-03-09-28-36.png)
+
+
+DirectorManager脚本
+```
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.Timeline;
+
+//每一个挂载了这个脚本的obj，都要求一个PlayableDirector组件，没有的话就会自动创建
+[RequireComponent(typeof(PlayableDirector))]
+public class DirectorManager : Manager
+{
+    PlayableDirector pd;
+
+    //各个剧本资源Timeline
+    [Header("====== Timeline Asset  =========")]
+    public TimelineAsset frontStab;
+
+    //某个剧本中的具体绑定的obj
+    [Header("======  Asset Setting =========")]
+    public ActorManager attackerAm;
+    public ActorManager victimAm;
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        pd = GetComponent<PlayableDirector>();
+        pd.playOnAwake = false;
+    }
+
+    public void Play(string timelineName, ActorManager original, ActorManager target)
+    {
+        if (timelineName == "frontStab")
+        {
+            //配置剧本,两种方法
+            //pd.PlayableAsset = frontStab;
+            pd.playableAsset = Instantiate(frontStab);
+
+            //取得这个剧本
+            TimelineAsset timeline = (TimelineAsset)pd.playableAsset;
+
+            //这里必须先调用Evaluate，这是为了让unity先运行MyplayableClip代码中的CreatePlayable函数
+            //再运行下面的设置
+            //这个顺序很重要
+            pd.Evaluate();
+
+            //取得所有轨道
+            foreach(var track in timeline.GetOutputTracks())
+            {
+                if (track.name == "Attacker's ActorManager")
+                {
+                    //改变这个轨道绑定的目标
+                    pd.SetGenericBinding(track, original);
+
+                    //取得这个轨道里面所有的clip，来修改clip的参数
+                    foreach(var clip in track.GetClips())
+                    {
+                        MyplayableClip myclip = (MyplayableClip)clip.asset;
+                        MyplayableBehaviour mybehav = myclip.template;
+
+                        //设置这个clip的参数为attackerAm，
+                        //要利用exposedName，必须先将exposedname初始化，在MyplayableClip中初始化
+                        pd.SetReferenceValue(myclip.am.exposedName, attackerAm);
+                    }
+                }
+                else if (track.name == "Victim's ActorManager")
+                {
+                    pd.SetGenericBinding(track, target);
+
+                    //取得这个轨道里面所有的clip，来修改clip的参数
+                    foreach (var clip in track.GetClips())
+                    {
+                        MyplayableClip myclip = (MyplayableClip)clip.asset;
+                        MyplayableBehaviour mybehav = myclip.template;
+
+                        //设置这个clip的参数为victimAm
+                        pd.SetReferenceValue(myclip.am.exposedName, victimAm);
+                    }
+                }
+                else if (track.name == "Attacker Animation")
+                {
+                    //改变这个轨道绑定的目标
+                    pd.SetGenericBinding(track, original.GetActorController().GetAnimator());
+                }
+                else if (track.name == "Victim Animation")
+                {
+                    pd.SetGenericBinding(track, target.GetActorController().GetAnimator());
+                }
+            }
+
+            //播放Timeline
+            pd.Play();
+        }        
+    }
+
+}
+
+```
+
+MyplayableClip脚本
+```
+using System;
+using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.Timeline;
+
+[Serializable]
+public class MyplayableClip : PlayableAsset, ITimelineClipAsset
+{
+    public MyplayableBehaviour template = new MyplayableBehaviour ();
+    public ExposedReference<ActorManager> am;
+
+    public ClipCaps clipCaps
+    {
+        get { return ClipCaps.Blending; }
+    }
+
+    public override Playable CreatePlayable (PlayableGraph graph, GameObject owner)
+    {
+        var playable = ScriptPlayable<MyplayableBehaviour>.Create (graph, template);
+        MyplayableBehaviour clone = playable.GetBehaviour ();
+
+        //这里要手动帮exposedName初始化，因为unity官方没有把它初始化
+        //这里初始化exposedName是为了让不同clip的myGameObject的exposeName有独一无二的标识。
+        //以免在后面利用exposedName来设置clip的参数时，因为exposedName相同而导致所有的clip的参数都一样。
+        am.exposedName = GetInstanceID().ToString();
+
+        clone.am = am.Resolve (graph.GetResolver ());
+        return playable;
+    }
+}
+
+```
+
+最后clip的参数am已经取到了，直接在MyplayableBehaviour里进行操作就好了
+```
+using System;
+using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.Timeline;
+
+[Serializable]
+public class MyplayableBehaviour : PlayableBehaviour
+{
+    public ActorManager am;
+    public float myFloat;
+
+    public override void PrepareFrame(Playable playable,FrameData info)
+    {
+        am.LockUnLockActorController(true);
+    }
+
+    public override void OnBehaviourPause(Playable playable,FrameData info)
+    {
+        am.LockUnLockActorController(false);
+    }
+}
+
+```
+
+
+
 
 
 
