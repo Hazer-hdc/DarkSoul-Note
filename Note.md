@@ -2443,8 +2443,13 @@ public class DirectorManager : Manager
                         MyplayableClip myclip = (MyplayableClip)clip.asset;
                         MyplayableBehaviour mybehav = myclip.template;
 
+                        //这里要手动帮exposedName初始化，因为unity官方没有把它初始化
+                        //这里初始化exposedName是为了让不同clip的myGameObject的exposeName有独一无二的标识。
+                        //以免在后面利用exposedName来设置clip的参数时，因为exposedName相同而导致所有的clip的参数都一样。
+                        myclip.am.exposedName = System.Guid.NewGuid().ToString();
+
                         //设置这个clip的参数为attackerAm，
-                        //要利用exposedName，必须先将exposedname初始化，在MyplayableClip中初始化
+                        //要利用exposedName，必须先将exposedname初始化。
                         pd.SetReferenceValue(myclip.am.exposedName, attackerAm);
                     }
                 }
@@ -2457,6 +2462,11 @@ public class DirectorManager : Manager
                     {
                         MyplayableClip myclip = (MyplayableClip)clip.asset;
                         MyplayableBehaviour mybehav = myclip.template;
+
+                        //这里要手动帮exposedName初始化，因为unity官方没有把它初始化
+                        //这里初始化exposedName是为了让不同clip的myGameObject的exposeName有独一无二的标识。
+                        //以免在后面利用exposedName来设置clip的参数时，因为exposedName相同而导致所有的clip的参数都一样。
+                        myclip.am.exposedName = System.Guid.NewGuid().ToString();
 
                         //设置这个clip的参数为victimAm
                         pd.SetReferenceValue(myclip.am.exposedName, victimAm);
@@ -2505,10 +2515,7 @@ public class MyplayableClip : PlayableAsset, ITimelineClipAsset
         var playable = ScriptPlayable<MyplayableBehaviour>.Create (graph, template);
         MyplayableBehaviour clone = playable.GetBehaviour ();
 
-        //这里要手动帮exposedName初始化，因为unity官方没有把它初始化
-        //这里初始化exposedName是为了让不同clip的myGameObject的exposeName有独一无二的标识。
-        //以免在后面利用exposedName来设置clip的参数时，因为exposedName相同而导致所有的clip的参数都一样。
-        am.exposedName = GetInstanceID().ToString();
+
 
         clone.am = am.Resolve (graph.GetResolver ());
         return playable;
@@ -2542,6 +2549,152 @@ public class MyplayableBehaviour : PlayableBehaviour
 }
 
 ```
+
+# Resources
+
+在Asset文件夹下新建一个文件夹Resources，名字一定得是Resources，这是unity的潜规则。这样里面的东西可以用一行代码就抓到。
+
+**在这个Resources底下，做一张表，存储所有武器的数值。**
+
+例如：Resources文件底下有两个prefab，直接从硬盘将sword加载到内存，再instantiate
+![](image/2021-05-03-16-34-39.png)
+
+```
+public class GameManager : MonoBehaviour
+{
+    // Start is called before the first frame update
+    void Start()
+    {
+        //从硬盘将资源载入到内存，
+        GameObject sword = Resources.Load("sword") as GameObject;
+        Instantiate(sword, Vector3.zero, Quaternion.identity);
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        
+    }
+}
+
+```
+
+## GameManager
+
+### 单例：
+```
+public class GameManager : MonoBehaviour
+{
+    private static GameManager instance;
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        CheckGameObject();
+        CheckSingle();
+    }
+
+    //GameManager只能挂载在tag为GM的obj上
+    private void CheckGameObject()
+    {
+        if (tag != "GM")
+            Destroy(this);
+    }
+
+    //单例
+    private void CheckSingle()
+    {
+        if (instance == null)
+        {
+            instance = this;
+            //在切换场景时不要destroy这个obj
+            DontDestroyOnLoad(gameObject);
+            return;
+        }
+        Destroy(this);
+    }
+}
+```
+
+## TextAsset
+
+直接在Resources文件中新建一个json文件。
+![](image/2021-05-03-17-16-14.png)
+
+json里面的内容：
+![](image/2021-05-03-17-47-14.png)
+
+测试：
+![](image/2021-05-03-17-41-00.png)
+
+利用第三方插件：JSON Object
+![](image/2021-05-03-17-48-23.png)
+
+就可以利用JSONObject类来操作json文件了
+![](image/2021-05-03-17-51-24.png)
+
+这个值就可以动态地组装到武器上了。
+
+## DataBase类
+
+用一个DataBase类来管理各种Data。
+```
+public class DataBase 
+{
+    private string weaponDataBaseFileName = "weaponData";
+
+    public JSONObject WeaponDataBase { get; private set; }
+
+    public DataBase()
+    {
+        TextAsset weaponContent = Resources.Load(weaponDataBaseFileName) as TextAsset;
+        WeaponDataBase = new JSONObject(weaponContent.text);
+    }
+}
+```
+在GameManager中初始化DataBase。
+```
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class GameManager : MonoBehaviour
+{
+    private static GameManager instance;
+    private DataBase weaponDB;
+
+    private void Start()
+    {
+        InitWeaponDB();
+    }
+
+    private void InitWeaponDB()
+    {
+        weaponDB = new DataBase();
+    }
+}
+
+```
+
+## 武器工厂
+WeaponFactory类
+
+![](image/2021-05-03-18-49-52.png)
+![](image/2021-05-03-18-50-10.png)
+
+在GameManager类中初始化WeaponFactory，并生成武器。
+![](image/2021-05-03-18-51-43.png)
+![](image/2021-05-03-18-52-39.png)
+
+
+
+
+
+
+
+
+
+
 
 
 
